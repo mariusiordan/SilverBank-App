@@ -173,15 +173,18 @@ useEffect(() => {
                 Testimonials
               </a>
             </li>
-            <li className="nav__item">
-              <a
-                className="nav__link nav__link--btn btn--show-modal"
-                href="#"
-                onClick={openModal}
-              >
-                Open account
-              </a>
-            </li>
+          <li className="nav__item">
+            <a className="nav__link nav__link--btn" href="/signup">
+                  Open account
+               </a>
+          </li>
+
+          <li className="nav__item">
+            <a className="nav__link nav__link--btn" href="/login">
+                Login
+             </a>
+          </li>
+
           </ul>
         </nav>
 
@@ -333,7 +336,7 @@ useEffect(() => {
               across the world, our instant transfer service ensures your money
               moves in seconds. Secure, seamless, and available 24/7 – because
               your time (and money) matters.
-              <a className="btn--show-modal" href="#" onClick={openModal}>
+              <a className="btn--show-modal" href="/signup">
                 {" "}
                 Sign up
               </a>{" "}
@@ -526,9 +529,10 @@ useEffect(() => {
             is today!
           </h3>
         </div>
-        <button className="btn btn--show-modal" onClick={openModal}>
-          Open your free account today!
-        </button>
+       <a className="btn btn--show-modal" href="/signup">
+            Open your free account today!
+        </a>
+
       </section>
 
       {/* FOOTER */}
@@ -584,7 +588,7 @@ useEffect(() => {
         </p>
       </footer>
 
-      {/* MODAL + OVERLAY */}
+      {/* MODAL + OVERLAY
       <div className={"modal" + (modalOpen ? "" : " hidden")}>
         <button className="btn--close-modal" onClick={closeModal}>
           &times;
@@ -608,7 +612,7 @@ useEffect(() => {
       <div
         className={"overlay" + (modalOpen ? "" : " hidden")}
         onClick={closeModal}
-      ></div>
+      ></div> */}
     </>
   );
 }

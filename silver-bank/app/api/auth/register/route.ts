@@ -5,10 +5,30 @@ import { signToken } from "@/lib/jwt";
 
 export async function POST(req: Request) {
   try {
-    const { name, email, password } = await req.json();
+    let name = "";
+    let email = "";
+    let password = "";
 
-    const existing = await prisma.user.findUnique({ where: { email } });
-    if (existing) {
+    const contentType = req.headers.get("content-type") || "";
+
+    if (contentType.includes("application/json")) {
+      const data = await req.json();
+      name = data.name;
+      email = data.email;
+      password = data.password;
+    } else {
+      const form = await req.formData();
+      name = String(form.get("name"));
+      email = String(form.get("email"));
+      password = String(form.get("password"));
+    }
+
+    if (!name || !email || !password) {
+      return NextResponse.json({ error: "Missing fields" }, { status: 400 });
+    }
+
+    const exists = await prisma.user.findUnique({ where: { email } });
+    if (exists) {
       return NextResponse.json({ error: "Email already exists" }, { status: 400 });
     }
 
@@ -19,33 +39,20 @@ export async function POST(req: Request) {
         name,
         email,
         password: hashed,
-       accounts: {
-  create: {
-    iban: "GB" + Math.floor(Math.random() * 9999999999),
-    balance: 1000,
-    bonusGranted: true,
-    transactions: {
-      create: [
-        {
-          type: "DEPOSIT",
-          amount: 200,
-          description: "🎁 Welcome Bonus",
+        accounts: {
+          create: {
+            iban: "GB" + Math.floor(Math.random() * 9999999999),
+            balance: 1000,
+            bonusGranted: true,
+            transactions: {
+              create: [
+                { type: "DEPOSIT", amount: 200, description: "🎁 Welcome Bonus" },
+                { type: "DEPOSIT", amount: 100, description: "🎉 Free Cashback" },
+                { type: "DEPOSIT", amount: 50, description: "🏦 New Account Reward" },
+              ]
+            }
+          },
         },
-        {
-          type: "DEPOSIT",
-          amount: 100,
-          description: "🎉 Free Cashback",
-        },
-        {
-          type: "DEPOSIT",
-          amount: 50,
-          description: "🏦 New Account Reward",
-        },
-      ],
-    },
-  },
-},
-
       },
       include: { accounts: true },
     });
@@ -60,6 +67,9 @@ export async function POST(req: Request) {
       path: "/",
       maxAge: 60 * 60 * 24 * 7,
     });
+
+    // ✅ Redirect to account
+    res.headers.set("Location", "/account");
 
     return res;
   } catch (err: any) {

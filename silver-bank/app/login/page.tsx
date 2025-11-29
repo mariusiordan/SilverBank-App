@@ -3,6 +3,26 @@
 import "../auth.css";
 
 export default function LoginPage() {
+  async function handleLogin(e) {
+  e.preventDefault();
+
+  const email = e.target.email.value;
+  const password = e.target.password.value;
+
+  const res = await fetch("/api/auth/login", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email, password })
+  });
+
+  if (!res.ok) {
+    alert("Invalid login");
+    return;
+  }
+
+  window.location.href = "/account"; // redirect after login
+}
+
   return (
     <div className="auth-container">
       <div className="auth-card">
@@ -15,7 +35,8 @@ export default function LoginPage() {
         <h2 className="auth-title">Welcome Back</h2>
         <p className="auth-subtitle">Log in to access your SilverBank account.</p>
 
-        <form action="/api/auth/login" method="POST" className="auth-form">
+        <form onSubmit={handleLogin} className="auth-form">
+
 
           <input
             type="email"

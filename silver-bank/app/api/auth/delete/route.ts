@@ -4,40 +4,31 @@ import { verifyToken } from "@/lib/jwt";
 
 export async function DELETE(req: Request) {
   try {
-    const token = req.headers.get("cookie")
+    const cookie = req.headers.get("cookie");
+    const token = cookie
       ?.split("; ")
-      .find(c => c.startsWith("token="))
+      .find((c) => c.startsWith("token="))
       ?.split("=")[1];
 
-    if (!token) {
-      return NextResponse.json({ error: "No token" }, { status: 401 });
-    }
+    const decoded = verifyToken(token || "");
+    if (!decoded) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-    const decoded: any = verifyToken(token);
-    if (!decoded) {
-      return NextResponse.json({ error: "Invalid token" }, { status: 401 });
-    }
+    const userId = decoded.userId;
 
-    // Delete user's accounts and transactions
-    await prisma.transaction.deleteMany({
-      where: { account: { userId: decoded.userId } },
-    });
+    await prisma.$transaction([
+      prisma.transaction.deleteMany({
+        where: { account: { userId } },
+      }),
+      prisma.account.deleteMany({ where: { userId } }),
+      prisma.user.delete({ where: { id: userId } }),
+    ]);
 
-    await prisma.account.deleteMany({
-      where: { userId: decoded.userId },
-    });
-
-    await prisma.user.delete({
-      where: { id: decoded.userId },
-    });
-
-    const res = NextResponse.json({ message: "Account deleted" });
-
-    // Remove token cookie
+    const res = NextResponse.json({ success: true });
     res.cookies.set("token", "", { maxAge: 0 });
 
     return res;
-  } catch (err: any) {
-    return NextResponse.json({ error: "Server error: " + err.message }, { status: 500 });
+  } catch (err) {
+    console.error(err);
+    return NextResponse.json({ error: "Server error" }, { status: 500 });
   }
 }

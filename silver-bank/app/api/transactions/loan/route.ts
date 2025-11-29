@@ -4,60 +4,42 @@ import { verifyToken } from "@/lib/jwt";
 
 export async function POST(req: Request) {
   try {
-    const { amount } = await req.json();
-
-    const token = req.headers.get("cookie")
+    const cookie = req.headers.get("cookie");
+    const token = cookie
       ?.split("; ")
       .find((c) => c.startsWith("token="))
       ?.split("=")[1];
 
-    if (!token) return NextResponse.json({ error: "No token" }, { status: 401 });
-    const decoded = verifyToken(token);
-    if (!decoded)
-      return NextResponse.json({ error: "Invalid token" }, { status: 401 });
+    const decoded = verifyToken(token || "");
+    if (!decoded) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-    const user = await prisma.user.findUnique({
-      where: { id: decoded.userId },
-      include: { accounts: true },
-    });
+    const { amount } = await req.json();
+    if (!amount || amount <= 0)
+      return NextResponse.json({ error: "Invalid amount" }, { status: 400 });
 
-    if (!user || user.accounts.length === 0)
-      return NextResponse.json({ error: "Account not found" }, { status: 404 });
+    const userId = decoded.userId;
 
-    const account = user.accounts[0];
-
-    // Loan must be <= 10x deposits
-    const deposits = await prisma.transaction.aggregate({
-      _sum: { amount: true },
-      where: { accountId: account.id, type: "DEPOSIT" },
-    });
-
-    if ((deposits._sum.amount ?? 0) * 10 < amount)
-      return NextResponse.json(
-        { error: "Loan not approved — insufficient deposit history" },
-        { status: 400 }
-      );
+    const account = await prisma.account.findFirst({ where: { userId } });
+    if (!account) return NextResponse.json({ error: "Account not found" }, { status: 404 });
 
     await prisma.$transaction([
       prisma.account.update({
         where: { id: account.id },
-        data: { balance: account.balance + amount },
+        data: { balance: { increment: amount } },
       }),
 
       prisma.transaction.create({
         data: {
           type: "DEPOSIT",
           amount,
-          description: "Loan approved",
+          description: "Loan Approved",
           accountId: account.id,
         },
       }),
     ]);
 
-    return NextResponse.json({ message: "Loan approved" });
-
+    return NextResponse.json({ success: true });
   } catch (err) {
-    console.error(err);
     return NextResponse.json({ error: "Server error" }, { status: 500 });
   }
 }

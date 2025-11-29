@@ -19,12 +19,33 @@ export async function POST(req: Request) {
         name,
         email,
         password: hashed,
-        accounts: {
-          create: {
-            iban: "RO" + Math.floor(Math.random() * 9999999999),
-            balance: 1000, // start bonus :)
-          },
+       accounts: {
+  create: {
+    iban: "RO" + Math.floor(Math.random() * 9999999999),
+    balance: 1000,
+    bonusGranted: true,
+    transactions: {
+      create: [
+        {
+          type: "DEPOSIT",
+          amount: 200,
+          description: "🎁 Welcome Bonus",
         },
+        {
+          type: "DEPOSIT",
+          amount: 100,
+          description: "🎉 Free Cashback",
+        },
+        {
+          type: "DEPOSIT",
+          amount: 50,
+          description: "🏦 New Account Reward",
+        },
+      ],
+    },
+  },
+},
+
       },
       include: { accounts: true },
     });

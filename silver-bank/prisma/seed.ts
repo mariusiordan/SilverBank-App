@@ -1,66 +1,84 @@
 import { PrismaClient } from "@prisma/client";
-
 const prisma = new PrismaClient();
 
 async function main() {
-  // 1. User demo
+  // 1️⃣ Create demo user
   const user = await prisma.user.create({
     data: {
       email: "demo@silverbank.com",
-      password: "test1234", // îl hash-uim mai târziu
+      password: "test1234",
       name: "Demo User",
     },
   });
 
-  // 2. Cont demo
+  // 2️⃣ Create main account
   const account = await prisma.account.create({
     data: {
-      iban: "SB01-2025-998877",
-      balance: 4200,
+      iban: "SB00-NEW-0001",
+      balance: 5000,
       userId: user.id,
+      bonusGranted: true,
     },
   });
 
-  // 3. Tranzacții demo
+  // 3️⃣ Add demo + bonus transactions
   await prisma.transaction.createMany({
     data: [
+      // BONUS TRANSACTIONS
+       {
+      type: "DEPOSIT",
+      amount: 200,
+      description: "🎁 Welcome Bonus",
+      accountId: account.id,
+    },
+    {
+      type: "DEPOSIT",
+      amount: 100,
+      description: "🎉 Free Cashback",
+      accountId: account.id,
+    },
+    {
+      type: "DEPOSIT",
+      amount: 50,
+      description: "🏦 New Account Reward",
+      accountId: account.id,
+    },
+
+      // REALISTIC HISTORY
       {
         type: "DEPOSIT",
-        amount: 2000,
+        amount: 2500,
         description: "Salary",
         accountId: account.id,
       },
       {
-        type: "DEPOSIT",
-        amount: 500,
-        description: "Freelance project",
-        accountId: account.id,
-      },
-      {
         type: "WITHDRAW",
-        amount: 150,
+        amount: 280,
         description: "Groceries",
         accountId: account.id,
       },
       {
+        type: "DEPOSIT",
+        amount: 320,
+        description: "Side Project",
+        accountId: account.id,
+      },
+      {
         type: "TRANSFER",
-        amount: 300,
+        amount: 200,
         description: "Sent to friend",
         accountId: account.id,
       },
       {
-        type: "DEPOSIT",
-        amount: 350,
-        description: "Bonus",
+        type: "WITHDRAW",
+        amount: 120,
+        description: "Coffee & Snacks",
         accountId: account.id,
       },
     ],
   });
 
-  console.log("🌱 Seed completed successfully!");
+  console.log("🌱 Seed finished!");
 }
 
-main()
-  .catch((e) => console.error(e))
-  .finally(() => prisma.$disconnect());
-
+main().finally(() => prisma.$disconnect());

@@ -1,0 +1,135 @@
+
+.sb-account-page * {
+  box-sizing: inherit;
+}
+
+.sb-account-page {
+  font-family: 'Poppins', sans-serif;
+  padding: 2rem;
+  background-color: #f3f3f3;
+  background-image: url('/img/jar.jpg');
+  background-size: cover;
+  background-position: center;
+  min-height: 100vh;
+}
+.sb-account-page body {
+  font-family: "Poppins", sans-serif;
+  background: #f3f3f3;
+  padding: 2rem;
+}
+
+/* NAV */
+.sb-account-page .bank-nav {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.sb-account-page .welcome {
+  font-size: 2rem;
+  color: #333;
+}
+
+.sb-account-page .logo {
+  height: 5rem;
+}
+
+.sb-account-page .btn-logout {
+  background: tomato;
+  color: white;
+  padding: 0.7rem 1.2rem;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+/* BALANCE */
+.sb-account-page .balance {
+  margin-top: 3rem;
+  display: flex;
+  justify-content: space-between;
+}
+
+.sb-account-page .balance__value {
+  font-size: 4rem;
+}
+
+/* MOVEMENTS */
+.sb-account-page .movements {
+  margin-top: 2rem;
+  background: white;
+  border-radius: 1rem;
+  padding: 1rem;
+  max-height: 30rem;
+  overflow-y: scroll;
+}
+
+.sb-account-page .movements__row {
+  display: flex;
+  padding: 1rem;
+  border-bottom: 1px solid #eee;
+}
+
+.sb-account-page .movements__type--deposit {
+  background: #9be15d;
+  padding: 0.4rem 1rem;
+  border-radius: 1rem;
+  color: white;
+}
+
+.sb-account-page .movements__type--withdrawal {
+  background: #ff585f;
+  padding: 0.4rem 1rem;
+  border-radius: 1rem;
+  color: white;
+}
+
+.sb-account-page .movements__value {
+  margin-left: auto;
+}
+
+/* SUMMARY */
+.sb-account-page .summary {
+  display: flex;
+  margin-top: 2rem;
+  font-size: 1.4rem;
+}
+
+/* OPERATIONS */
+.sb-account-page .operation {
+  margin-top: 3rem;
+  padding: 2rem;
+  border-radius: 1rem;
+  color: white;
+}
+
+.sb-account-page .operation--transfer {
+  background: linear-gradient(to top left, #ffb003, #ffcb03);
+}
+
+.sb-account-page .operation--loan {
+  background: linear-gradient(to top left, #39b385, #9be15d);
+}
+
+.sb-account-page .operation--close {
+  background: linear-gradient(to top left, #e52a5a, #ff585f);
+}
+
+.sb-account-page form {
+  display: grid;
+  grid-template-columns: 1fr 1fr auto;
+  gap: 1rem;
+}
+
+.sb-account-page .form__input {
+  padding: 0.5rem;
+  border-radius: 8px;
+  border: none;
+}
+
+.sb-account-page .form__btn {
+  background: white;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+}

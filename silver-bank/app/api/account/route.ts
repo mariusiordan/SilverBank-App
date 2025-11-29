@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { verifyToken } from "@/lib/jwt";
 
+
+
 export async function GET(req: Request) {
   try {
     // 1. Extract cookie token

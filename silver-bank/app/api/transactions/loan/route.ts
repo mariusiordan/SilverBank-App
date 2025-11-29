@@ -1,40 +1,63 @@
 import { NextResponse } from "next/server";
-import { PrismaClient } from "@prisma/client";
-
-const prisma = new PrismaClient();
+import prisma from "@/lib/prisma";
+import { verifyToken } from "@/lib/jwt";
 
 export async function POST(req: Request) {
   try {
-    const body = await req.json();
-    const { userId = 1, amount } = body;
+    const { amount } = await req.json();
 
-    if (!amount || amount <= 0) {
-      return NextResponse.json({ error: "Invalid amount" }, { status: 400 });
-    }
+    const token = req.headers.get("cookie")
+      ?.split("; ")
+      .find((c) => c.startsWith("token="))
+      ?.split("=")[1];
 
-    const account = await prisma.account.findFirst({
-      where: { userId },
+    if (!token) return NextResponse.json({ error: "No token" }, { status: 401 });
+    const decoded = verifyToken(token);
+    if (!decoded)
+      return NextResponse.json({ error: "Invalid token" }, { status: 401 });
+
+    const user = await prisma.user.findUnique({
+      where: { id: decoded.userId },
+      include: { accounts: true },
     });
 
-    if (!account)
+    if (!user || user.accounts.length === 0)
       return NextResponse.json({ error: "Account not found" }, { status: 404 });
 
-    const updated = await prisma.account.update({
-      where: { id: account.id },
-      data: { balance: account.balance + amount },
+    const account = user.accounts[0];
+
+    // Loan must be <= 10x deposits
+    const deposits = await prisma.transaction.aggregate({
+      _sum: { amount: true },
+      where: { accountId: account.id, type: "DEPOSIT" },
     });
 
-    await prisma.transaction.create({
-      data: {
-        type: "DEPOSIT",
-        amount,
-        description: "Loan approved",
-        accountId: account.id,
-      },
-    });
+    if ((deposits._sum.amount ?? 0) * 10 < amount)
+      return NextResponse.json(
+        { error: "Loan not approved — insufficient deposit history" },
+        { status: 400 }
+      );
 
-    return NextResponse.json({ ok: true, balance: updated.balance });
+    await prisma.$transaction([
+      prisma.account.update({
+        where: { id: account.id },
+        data: { balance: account.balance + amount },
+      }),
+
+      prisma.transaction.create({
+        data: {
+          type: "DEPOSIT",
+          amount,
+          description: "Loan approved",
+          accountId: account.id,
+        },
+      }),
+    ]);
+
+    return NextResponse.json({ message: "Loan approved" });
+
   } catch (err) {
+    console.error(err);
     return NextResponse.json({ error: "Server error" }, { status: 500 });
   }
 }

@@ -1,66 +1,79 @@
 import { NextResponse } from "next/server";
-import { PrismaClient } from "@prisma/client";
-
-const prisma = new PrismaClient();
+import prisma from "@/lib/prisma";
+import { verifyToken } from "@/lib/jwt";
 
 export async function POST(req: Request) {
   try {
-    const body = await req.json();
-    const { userId = 1, toIban, amount } = body;
+    const { toIban, amount } = await req.json();
 
-    if (!toIban || !amount || amount <= 0) {
-      return NextResponse.json({ error: "Invalid data" }, { status: 400 });
-    }
+    // 1. Verify token
+    const token = req.headers.get("cookie")
+      ?.split("; ")
+      .find((c) => c.startsWith("token="))
+      ?.split("=")[1];
 
-    // get sender
-    const sender = await prisma.account.findFirst({
-      where: { userId },
+    if (!token) return NextResponse.json({ error: "No token" }, { status: 401 });
+
+    const decoded = verifyToken(token);
+    if (!decoded)
+      return NextResponse.json({ error: "Invalid token" }, { status: 401 });
+
+    // 2. Fetch sender
+    const sender = await prisma.user.findUnique({
+      where: { id: decoded.userId },
+      include: { accounts: true },
     });
 
-    if (!sender) return NextResponse.json({ error: "Account not found" }, { status: 404 });
-    if (sender.balance < amount)
-      return NextResponse.json({ error: "Insufficient funds" }, { status: 400 });
+    if (!sender || sender.accounts.length === 0)
+      return NextResponse.json({ error: "Sender account not found" }, { status: 404 });
 
-    // get receiver
-    const receiver = await prisma.account.findFirst({
+    const senderAccount = sender.accounts[0];
+
+    // 3. Fetch recipient
+    const receiverAccount = await prisma.account.findUnique({
       where: { iban: toIban },
     });
 
-    if (!receiver)
-      return NextResponse.json({ error: "Receiver not found" }, { status: 404 });
+    if (!receiverAccount)
+      return NextResponse.json({ error: "Recipient not found" }, { status: 404 });
 
-    // update sender
-    await prisma.account.update({
-      where: { id: sender.id },
-      data: { balance: sender.balance - amount },
-    });
+    // 4. Check balance
+    if (senderAccount.balance < amount)
+      return NextResponse.json({ error: "Insufficient funds" }, { status: 400 });
 
-    // update receiver
-    await prisma.account.update({
-      where: { id: receiver.id },
-      data: { balance: receiver.balance + amount },
-    });
+    // 5. Execute transfer
+    await prisma.$transaction([
+      prisma.account.update({
+        where: { id: senderAccount.id },
+        data: { balance: senderAccount.balance - amount },
+      }),
 
-    // create transactions
-    await prisma.transaction.create({
-      data: {
-        type: "TRANSFER",
-        amount,
-        description: `Transfer to ${toIban}`,
-        accountId: sender.id,
-      },
-    });
+      prisma.account.update({
+        where: { id: receiverAccount.id },
+        data: { balance: receiverAccount.balance + amount },
+      }),
 
-    await prisma.transaction.create({
-      data: {
-        type: "DEPOSIT",
-        amount,
-        description: `Transfer from ${sender.iban}`,
-        accountId: receiver.id,
-      },
-    });
+      prisma.transaction.create({
+        data: {
+          type: "TRANSFER",
+          amount,
+          description: `Transfer to ${toIban}`,
+          accountId: senderAccount.id,
+        },
+      }),
 
-    return NextResponse.json({ ok: true });
+      prisma.transaction.create({
+        data: {
+          type: "DEPOSIT",
+          amount,
+          description: `Transfer from ${senderAccount.iban}`,
+          accountId: receiverAccount.id,
+        },
+      }),
+    ]);
+
+    return NextResponse.json({ message: "Transfer completed" });
+
   } catch (err) {
     console.error(err);
     return NextResponse.json({ error: "Server error" }, { status: 500 });

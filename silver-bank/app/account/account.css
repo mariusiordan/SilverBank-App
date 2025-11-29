@@ -1,190 +1,160 @@
-/* MAIN WRAPPER */
+/* GLOBAL WRAPPER */
 .sb-page {
   font-family: "Poppins", sans-serif;
-  padding: 2rem;
-  background-color: #f3f3f3;
+  background: #f3f3f3 url('/img/jar.jpg') no-repeat center/cover;
   min-height: 100vh;
+  padding: 2rem;
 }
 
-/* NAVBAR */
+/* NAV */
 .sb-nav {
   display: flex;
   justify-content: space-between;
   align-items: center;
 }
 
-.sb-welcome {
-  font-size: 1.8rem;
-  color: #333;
-}
-
-.sb-logo {
-  height: 5rem;
-}
-
-.sb-btn-logout {
-  background: tomato;
-  color: white;
-  padding: 0.6rem 1.2rem;
-  border: none;
-  border-radius: 6px;
-  cursor: pointer;
-}
-
-/* GRID LAYOUT */
-.sb-grid {
-  margin-top: 3rem;
-  display: grid;
-  grid-template-columns: 2fr 1.2fr;
-  gap: 2rem;
-  align-items: flex-start;
-}
-
-/* LEFT SIDE – MOVEMENTS */
-.sb-movements {
-  background: white;
-  padding: 1.5rem;
-  border-radius: 1rem;
-  max-height: 70vh;
-  overflow-y: auto;
-}
-
-.sb-section-title {
-  margin-bottom: 1rem;
-  font-size: 1.6rem;
+.welcome {
+  font-size: 1.9rem;
   font-weight: 600;
 }
 
-.sb-movement-row {
+.logo {
+  height: 4.2rem;
+}
+
+.btn-logout {
+  background: tomato;
+  color: #fff;
+  border: none;
+  padding: 0.7rem 1.2rem;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+/* HEADER */
+.sb-header {
+  margin-top: 2rem;
   display: flex;
+  justify-content: space-between;
   align-items: center;
-  border-bottom: 1px solid #eee;
-  padding: 1rem 0;
 }
 
-.sb-movement-type {
-  padding: 0.4rem 1rem;
-  border-radius: 1rem;
-  font-size: 1.1rem;
-  color: white;
-  margin-right: 1rem;
-}
-
-.sb-deposit {
-  background: #4caf50;
-}
-
-.sb-withdraw {
-  background: #e53935;
-}
-
-.sb-movement-date {
+.iban-label {
   font-size: 1.2rem;
   color: #666;
 }
 
-.sb-movement-amount {
-  margin-left: auto;
-  font-weight: 600;
-  font-size: 1.4rem;
+.iban-value {
+  font-size: 2rem;
+  font-weight: bold;
+  color: #222;
 }
 
-/* RIGHT SIDE – ACTIONS */
-.sb-right > div,
-.sb-operation {
-  margin-bottom: 2rem;
+.balance-box {
+  text-align: right;
 }
 
-/* BALANCE BOX */
-.sb-balance-box {
-  background: white;
-  padding: 1.5rem;
-  border-radius: 1rem;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
+.balance-label {
+  color: #666;
 }
 
-.sb-balance-label {
-  font-size: 1.4rem;
-}
-
-.sb-balance-value {
-  font-size: 2.8rem;
+.balance-value {
+  font-size: 3rem;
   font-weight: bold;
 }
 
-/* SUMMARY */
-.sb-summary {
-  display: flex;
-  justify-content: space-between;
-  padding: 1.2rem;
+/* MAIN GRID */
+.sb-main {
+  margin-top: 3rem;
+  display: grid;
+  grid-template-columns: 2fr 1fr;
+  gap: 2.5rem;
+}
+
+/* MOVEMENTS */
+.movements {
   background: white;
-  border-radius: 1rem;
+  padding: 1rem;
+  border-radius: 12px;
+  max-height: 60vh;
+  overflow-y: auto;
 }
 
-.sb-sum-label {
-  font-size: 1.2rem;
-  color: #777;
-}
-
-.sb-sum-value {
-  font-size: 1.8rem;
-  font-weight: bold;
-}
-
-.sb-sum-in {
-  color: #4caf50;
-}
-
-.sb-sum-out {
-  color: #e53935;
-}
-
-.sb-sum-interest {
-  color: #2196f3;
-}
-
-/* OPERATIONS */
-.sb-operation {
-  padding: 1.8rem;
-  border-radius: 1rem;
-}
-
-.sb-op-transfer {
-  background: linear-gradient(to top left, #ffb003, #ffcb03);
-}
-
-.sb-op-loan {
-  background: linear-gradient(to top left, #39b385, #9be15d);
-}
-
-.sb-op-close {
-  background: linear-gradient(to top left, #e52a5a, #ff585f);
-}
-
-.sb-operation h3 {
+.section-title {
   margin-bottom: 1rem;
+  font-size: 1.5rem;
+}
+
+.movements__row {
+  display: flex;
+  align-items: center;
+  padding: 1rem 0;
+  border-bottom: 1px solid #eee;
+}
+
+.movements__type--deposit {
+  background: #4cd964;
+  padding: 0.4rem 1rem;
+  border-radius: 8px;
   color: white;
 }
 
-/* FORMS */
-.sb-form {
-  display: grid;
-  grid-template-columns: 1fr 1fr auto;
-  gap: 1rem;
-}
-
-.sb-input {
-  padding: 0.6rem;
+.movements__type--withdrawal {
+  background: #ff3b30;
+  padding: 0.4rem 1rem;
   border-radius: 8px;
-  border: none;
+  color: white;
 }
 
-.sb-btn-op {
+.movements__details {
+  margin-left: 1rem;
+}
+
+.movements__value {
+  margin-left: auto;
+  font-size: 1.4rem;
+  font-weight: 600;
+}
+
+/* RIGHT COLUMN */
+.operations {
+  display: flex;
+  flex-direction: column;
+  gap: 2rem;
+}
+
+.operation {
+  padding: 1.5rem;
+  border-radius: 12px;
   background: white;
+}
+
+.card-transfer {
+  border-left: 6px solid #ffb003;
+}
+
+.card-loan {
+  border-left: 6px solid #4cd964;
+}
+
+.card-close {
+  border-left: 6px solid #ff3b30;
+}
+
+.form__input {
+  width: 100%;
+  padding: 0.7rem;
+  margin-bottom: 1rem;
+  border-radius: 8px;
+  border: 1px solid #ccc;
+}
+
+.form__btn {
+  width: 100%;
+  padding: 0.8rem;
+  background: black;
+  color: white;
   border: none;
-  padding: 0 1.2rem;
   border-radius: 8px;
   cursor: pointer;
 }

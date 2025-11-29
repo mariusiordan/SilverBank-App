@@ -2,7 +2,7 @@ import { PrismaClient } from "@prisma/client";
 const prisma = new PrismaClient();
 
 async function main() {
-  // 1️⃣ Create demo user
+  // Demo user
   const user = await prisma.user.create({
     data: {
       email: "demo@silverbank.com",
@@ -11,67 +11,54 @@ async function main() {
     },
   });
 
-  // 2️⃣ Create main account
+  // GB account
   const account = await prisma.account.create({
     data: {
-      iban: "SB00-NEW-0001",
+      iban: "GB00-SILVER-" + Math.floor(100000 + Math.random() * 900000),
       balance: 5000,
       userId: user.id,
-      bonusGranted: true,
     },
   });
 
-  // 3️⃣ Add demo + bonus transactions
+  // Transactions
   await prisma.transaction.createMany({
     data: [
-      // BONUS TRANSACTIONS
-       {
-      type: "DEPOSIT",
-      amount: 200,
-      description: "🎁 Welcome Bonus",
-      accountId: account.id,
-    },
-    {
-      type: "DEPOSIT",
-      amount: 100,
-      description: "🎉 Free Cashback",
-      accountId: account.id,
-    },
-    {
-      type: "DEPOSIT",
-      amount: 50,
-      description: "🏦 New Account Reward",
-      accountId: account.id,
-    },
+      // Welcome bonuses
+      {
+        type: "DEPOSIT",
+        amount: 300,
+        description: "🎁 Welcome Gift",
+        accountId: account.id,
+      },
+      {
+        type: "DEPOSIT",
+        amount: 100,
+        description: "🎉 Cashback Reward",
+        accountId: account.id,
+      },
 
-      // REALISTIC HISTORY
+      // History samples
       {
         type: "DEPOSIT",
         amount: 2500,
-        description: "Salary",
+        description: "Monthly Salary",
         accountId: account.id,
       },
       {
         type: "WITHDRAW",
-        amount: 280,
+        amount: 180,
         description: "Groceries",
         accountId: account.id,
       },
       {
-        type: "DEPOSIT",
-        amount: 320,
-        description: "Side Project",
-        accountId: account.id,
-      },
-      {
         type: "TRANSFER",
-        amount: 200,
+        amount: 250,
         description: "Sent to friend",
         accountId: account.id,
       },
       {
         type: "WITHDRAW",
-        amount: 120,
+        amount: 60,
         description: "Coffee & Snacks",
         accountId: account.id,
       },

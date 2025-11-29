@@ -21,7 +21,7 @@ export async function POST(req: Request) {
         password: hashed,
        accounts: {
   create: {
-    iban: "RO" + Math.floor(Math.random() * 9999999999),
+    iban: "GB" + Math.floor(Math.random() * 9999999999),
     balance: 1000,
     bonusGranted: true,
     transactions: {

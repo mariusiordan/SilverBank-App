@@ -130,7 +130,10 @@ export default function AccountPage() {
 
   if (loading) return <p className="p-8 text-lg">Loading account...</p>;
 
-  const { user, account } = accountData;
+  const user = accountData?.user;
+  const account = accountData?.account;
+    if (!user || !account)
+      return <p className="p-8 text-red-600">Error loading account data</p>;
 
   return (
     <main className="app p-8 relative">
@@ -148,7 +151,8 @@ export default function AccountPage() {
 
       {/* TOP NAV */}
       <nav className="flex items-center justify-between mb-6">
-        <p className="text-xl font-semibold">Welcome back, {user.name}!</p>
+        <p className="text-xl font-semibold"> Welcome back, {user?.name ?? "Guest"}!</p>
+
         <img src="/img/logo.png" alt="Logo" className="w-16" />
 
         <button

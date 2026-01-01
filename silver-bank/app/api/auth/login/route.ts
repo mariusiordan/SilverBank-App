@@ -32,13 +32,14 @@ export async function POST(req: Request) {
 
     const token = signToken({ userId: user.id });
 
-    const res = NextResponse.json({ message: "Logged in", user });
+    const res = NextResponse.redirect(new URL("/account", req.url));
 
     res.cookies.set("token", token, {
       httpOnly: true,
-      secure: true,
+      secure: process.env.NODE_ENV === "production",
       path: "/",
       maxAge: 60 * 60 * 24 * 7,
+      sameSite: "lax",
     });
 
     // ✅ REDIRECT USER TO /account
@@ -46,6 +47,6 @@ export async function POST(req: Request) {
 
     return res;
   } catch (err: any) {
-    return NextResponse.json({ error: err.message }, { status: 500 });
+    return NextResponse.redirect(new URL(`/login?error=login_failed`, req.url));
   }
 }

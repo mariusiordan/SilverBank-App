@@ -3,6 +3,13 @@ import prisma from "@/lib/prisma";
 import bcrypt from "bcryptjs";
 import { signToken } from "@/lib/jwt";
 
+function isFormRequest(req: Request) {
+  const contentType = req.headers.get("content-type") || "";
+  return contentType.includes("application/x-www-form-urlencoded") ||
+    contentType.includes("multipart/form-data");
+}
+
+
 export async function POST(req: Request) {
   try {
     let name = "";
@@ -59,11 +66,15 @@ export async function POST(req: Request) {
 
     const token = signToken({ userId: user.id });
 
-    const res = NextResponse.json({ message: "Registered", user });
+   // IMPORTANT: form submit -> redirect to /account
+    const res = isFormRequest(req)
+      ? NextResponse.redirect(new URL("/account", req.url))
+      : NextResponse.json({ message: "Registered", user });
 
     res.cookies.set("token", token, {
       httpOnly: true,
-      secure: true,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: "lax",
       path: "/",
       maxAge: 60 * 60 * 24 * 7,
     });
@@ -73,6 +84,9 @@ export async function POST(req: Request) {
 
     return res;
   } catch (err: any) {
+      if (isFormRequest(req)) {
+        return NextResponse.redirect(new URL("/signup?error=server_error", req.url));
+      }
     return NextResponse.json({ error: err.message }, { status: 500 });
   }
 }

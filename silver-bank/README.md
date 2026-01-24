@@ -34,3 +34,25 @@ You can check out [the Next.js GitHub repository](https://github.com/vercel/next
 The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
 
 Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+
+
+# Oprește serviciul PostgreSQL
+brew services stop postgresql@16
+
+# Verifică că s-a oprit
+brew services list | grep postgresql
+
+
+# Pornește PostgreSQL
+brew services start postgresql@16
+
+# Pornește aplicația
+npm run dev
+
+# (Opțional) Prisma Studio
+npx prisma studio
+
+
+brew services stop postgresql@16
+brew uninstall postgresql@16
+rm -rf /opt/homebrew/var/postgresql@16

@@ -1,53 +1,51 @@
 "use client";
-
 import "../auth.css";
 
 export default function SignupPage() {
+  async function handleSignup(e) {
+    e.preventDefault();
+    const name = e.target.name.value;
+    const email = e.target.email.value;
+    const password = e.target.password.value;
+
+    const registerRes = await fetch("/api/auth/register", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name, email, password }),
+    });
+
+    if (!registerRes.ok) { alert("Registration failed. Email might already be in use."); return; }
+
+    const loginRes = await fetch("/api/auth/login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email, password }),
+    });
+
+    if (!loginRes.ok) { window.location.href = "/login"; return; }
+    window.location.href = "/account";
+  }
+
   return (
     <div className="auth-container">
       <div className="auth-card">
         <div className="signup-header">
-        <img src="/img/logo.png" className="signup-logo" />
-          </div>
-
-
+          {/* ✅ Link către homepage */}
+          <a href="/"><img src="/img/logo.png" className="signup-logo" /></a>
+        </div>
         <h2 className="auth-title">Create Account</h2>
         <p className="auth-subtitle">Join SilverBank and start banking smarter.</p>
 
-        <form action="/api/auth/register" method="POST" className="auth-form">
-
-          <input
-            type="text"
-            name="name"
-            className="auth-input"
-            placeholder="Full name"
-            required
-          />
-
-          <input
-            type="email"
-            name="email"
-            className="auth-input"
-            placeholder="Email address"
-            required
-          />
-
-          <input
-            type="password"
-            name="password"
-            className="auth-input"
-            placeholder="Password"
-            required
-          />
-
-          <button type="submit" className="auth-btn">
-            Sign Up
-          </button>
+        <form onSubmit={handleSignup} className="auth-form">
+          <input type="text" name="name" className="auth-input" placeholder="Full name" required />
+          <input type="email" name="email" className="auth-input" placeholder="Email address" required />
+          <input type="password" name="password" className="auth-input" placeholder="Password" required />
+          <button type="submit" className="auth-btn">Sign Up</button>
         </form>
 
-        <p className="auth-switch">
-          Already have an account? <a href="/login">Login</a>
-        </p>
+        <p className="auth-switch">Already have an account? <a href="/login">Login</a></p>
+        {/* ✅ Link homepage */}
+        <p className="auth-switch"><a href="/">← Back to homepage</a></p>
       </div>
     </div>
   );

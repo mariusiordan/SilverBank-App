@@ -16,6 +16,7 @@ export async function DELETE(req: Request) {
     const userId = decoded.userId;
 
     await prisma.$transaction([
+      prisma.cashEntry.deleteMany({ where: { userId } }),
       prisma.transaction.deleteMany({
         where: { account: { userId } },
       }),

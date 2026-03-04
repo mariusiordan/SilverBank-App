@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import "./account.css";
+import CashTracker from "./CashTracker"; 
 
 export default function AccountPage() {
   const [loading, setLoading] = useState(true);
@@ -242,6 +243,7 @@ const handleClose = async (e: any) => {
 
         </aside>
       </main>
+      <CashTracker userId={user.id} />
     </div>
   );
 }

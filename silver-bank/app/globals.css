@@ -125,6 +125,23 @@ body {
   transition: all 0.3s;
 }
 
+.btn--close-cookie {
+  font-size: 1.5rem;
+  font-weight: 500;
+  font-family: inherit;
+  background-color: #37383d;
+  color: #fff;
+  border: none;
+  padding: 1.2rem 3rem;
+  border-radius: 10rem;
+  cursor: pointer;
+  transition: all 0.3s;
+}
+
+.btn--close-cookie:hover {
+  background-color: #555;
+}
+
 p {
   color: #666;
 }

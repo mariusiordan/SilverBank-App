@@ -2,24 +2,12 @@
 
 import { useState, useEffect } from "react";
 
-
 export default function Home() {
   const [showCookie, setShowCookie] = useState(true);
-  const [modalOpen, setModalOpen] = useState<boolean>(false);
   const [activeTab, setActiveTab] = useState<number>(1);
   const [currentSlide, setCurrentSlide] = useState<number>(0);
 
   const totalSlides = 3;
-
-  const openModal = (e: any) => {
-    e.preventDefault();
-    setModalOpen(true);
-  };
-
-  const closeModal = (e?: any) => {
-    if (e) e.preventDefault();
-    setModalOpen(false);
-  };
 
   const handleScrollToFeatures = () => {
     if (typeof document !== "undefined") {
@@ -28,7 +16,7 @@ export default function Home() {
     }
   };
 
-  const handleNavClick = (e: any) => {
+  const handleNavClick = (e: React.MouseEvent<HTMLAnchorElement>) => {
     e.preventDefault();
     if (typeof document === "undefined") return;
     const href = e.currentTarget.getAttribute("href");
@@ -49,6 +37,7 @@ export default function Home() {
   const goToSlide = (index: number) => {
     setCurrentSlide(index);
   };
+
   
   useEffect(() => {
   const nav = document.querySelector(".nav");
@@ -195,7 +184,7 @@ useEffect(() => {
             <span className="highlight">money grow safely.</span>
           </h1>
           <h4>
-            Prefer to do your banking on a bigger screen? We’ve been improving
+            Prefer to do your banking on a bigger screen? We&apos;ve been improving
             Online Banking to make it even easier to use.
           </h4>
           <button
@@ -359,8 +348,8 @@ useEffect(() => {
             </h5>
             <p>
               Get approved in minutes with no long waits, no hidden fees, and no
-              unnecessary paperwork. Whether it’s for a new home, a big
-              purchase, or an unexpected expense, we’ve got you covered with
+              unnecessary paperwork. Whether it&apos;s for a new home, a big
+              purchase, or an unexpected expense, We&apos;ve got you covered with
               flexible terms and competitive rates. Apply today and take control
               of your future—instantly!
             </p>
@@ -411,10 +400,10 @@ useEffect(() => {
               </h5>
               <blockquote className="testimonial__text">
                 Switching to this service was hands down the best financial
-                decision I’ve ever made. The instant transfers are truly
+                decision I&apos;ve ever made. The instant transfers are truly
                 instant, and I never have to worry about hidden fees or delays.
                 Plus, the customer support is outstanding—they actually care
-                about helping you. Whether I’m sending money to friends or
+                about helping you. Whether I&apos;m sending money to friends or
                 handling bigger transactions, everything just works flawlessly.
                 Highly recommend to anyone looking for a stress-free financial
                 experience!
@@ -440,15 +429,15 @@ useEffect(() => {
                 The last step to becoming a complete minimalist.
               </h5>
               <blockquote className="testimonial__text">
-                You’ve decluttered your home, simplified your life, and embraced
-                living with less. Now, it’s time to do the same with your
+                You&apos;ve decluttered your home, simplified your life, and embraced
+                living with less. Now, it&apos;s time to do the same with your
                 finances! Say goodbye to unnecessary fees, complicated
                 processes, and financial clutter. With instant transfers, quick
                 loans, and one-click account closing, managing your money has
                 never been this simple. No stress, no waiting—just total control
-                at your fingertips. Minimalism isn’t just about owning less—it’s
+                at your fingertips. Minimalism isn&apos;t just about owning less—it&apos;s
                 about freeing yourself from the unnecessary. Ready to take the
-                final step? Let’s make it effortless!
+                final step? Let&apos;s make it effortless!
               </blockquote>
               <address className="testimonial__author">
                 <img
@@ -586,32 +575,6 @@ useEffect(() => {
           . Use for learning and portfolio.
         </p>
       </footer>
-
-      {/* MODAL + OVERLAY
-      <div className={"modal" + (modalOpen ? "" : " hidden")}>
-        <button className="btn--close-modal" onClick={closeModal}>
-          &times;
-        </button>
-        <h2 className="modal__header">
-          Open your bank account <br />
-          in just <span className="highlight">5 minutes</span>
-        </h2>
-        <form className="modal__form">
-          <label>First Name</label>
-          <input type="text" />
-          <label>Last Name</label>
-          <input type="text" />
-          <label>Email Address</label>
-          <input type="email" />
-          <button className="btn" onClick={closeModal}>
-            Next step &rarr;
-          </button>
-        </form>
-      </div>
-      <div
-        className={"overlay" + (modalOpen ? "" : " hidden")}
-        onClick={closeModal}
-      ></div> */}
     </>
   );
 }

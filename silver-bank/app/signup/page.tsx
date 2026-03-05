@@ -39,7 +39,7 @@ export default function SignupPage() {
       <div className="auth-card">
         <div className="signup-header">
           {/* ✅ Link către homepage */}
-          <a href="/"><img src="/img/logo.png" className="signup-logo" /></a>
+          <a href="/"><img src="/img/logo.png" className="signup-logo " alt="SilverBank logo"/></a>
         </div>
         <h2 className="auth-title">Create Account</h2>
         <p className="auth-subtitle">Join SilverBank and start banking smarter.</p>

@@ -22,7 +22,7 @@ export default function LoginPage() {
       <div className="auth-card">
         <div className="signup-header">
           {/* ✅ Link către homepage */}
-          <a href="/"><img src="/img/logo.png" className="signup-logo" /></a>
+          <a href="/"><img src="/img/logo.png" className="signup-logo" alt="SilverBank logo" /></a>
         </div>
         <h2 className="auth-title">Welcome Back</h2>
         <p className="auth-subtitle">Log in to access your SilverBank account.</p>

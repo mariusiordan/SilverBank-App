@@ -4,6 +4,8 @@ import { useEffect, useState } from "react";
 const CATEGORIES = ["🍔 Food", "🚌 Transport", "🛍️ Shopping", "💊 Health", "🎉 Entertainment", "📦 Other"];
 
 export default function CashTracker({ userId }: { userId: number }) {
+  void userId;
+
   const [entries, setEntries] = useState<any[]>([]);
   const [desc, setDesc] = useState("");
   const [amount, setAmount] = useState("");
@@ -16,7 +18,7 @@ export default function CashTracker({ userId }: { userId: number }) {
 
   useEffect(() => { load(); }, []);
 
-  async function handleAdd(e: any) {
+  async function handleAdd(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     const res = await fetch("/api/cash", {
       method: "POST",

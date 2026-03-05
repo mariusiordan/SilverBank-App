@@ -13,7 +13,7 @@ export async function GET() {
       version: process.env.APP_VERSION || "1.0.0",
     }, { status: 200 });
 
-  } catch (err) {
+  } catch  {
     return NextResponse.json({
       status: "error",
       database: "disconnected",

@@ -32,7 +32,8 @@ export async function POST(req: Request) {
 
     const token = signToken({ userId: user.id });
 
-    const res = NextResponse.redirect(new URL("/account", req.url));
+    // ✅ Returnează JSON în loc de redirect
+    const res = NextResponse.json({ message: "Login successful" }, { status: 200 });
 
     res.cookies.set("token", token, {
       httpOnly: true,
@@ -42,11 +43,8 @@ export async function POST(req: Request) {
       sameSite: "lax",
     });
 
-    // ✅ REDIRECT USER TO /account
-    res.headers.set("Location", "/account");
-
     return res;
   } catch (err: any) {
-    return NextResponse.redirect(new URL(`/login?error=login_failed`, req.url));
+    return NextResponse.json({ error: "Login failed" }, { status: 500 });
   }
 }

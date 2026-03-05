@@ -2,11 +2,11 @@
 import "../auth.css";
 
 export default function LoginPage() {
-  async function handleLogin(e) {
-    e.preventDefault();
-    const email = e.target.email.value;
-    const password = e.target.password.value;
-
+  async function handleLogin(e: React.FormEvent<HTMLFormElement>) {
+  e.preventDefault();
+  const form = e.currentTarget;
+  const email = (form.elements.namedItem("email") as HTMLInputElement).value;
+  const password = (form.elements.namedItem("password") as HTMLInputElement).value;
     const res = await fetch("/api/auth/login", {
       method: "POST",
       headers: { "Content-Type": "application/json" },

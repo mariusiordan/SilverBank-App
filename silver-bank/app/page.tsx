@@ -142,7 +142,6 @@ useEffect(() => {
             alt="Bankist logo"
             className="nav__logo"
             id="logo"
-            designer="Jonas"
             data-version-number="3.0"
           />
           <ul className="nav__links">

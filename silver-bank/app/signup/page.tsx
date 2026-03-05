@@ -2,29 +2,37 @@
 import "../auth.css";
 
 export default function SignupPage() {
-  async function handleSignup(e) {
-    e.preventDefault();
-    const name = e.target.name.value;
-    const email = e.target.email.value;
-    const password = e.target.password.value;
+  async function handleSignup(e: React.FormEvent<HTMLFormElement>) {
+  e.preventDefault();
+  const form = e.currentTarget;
+  const name = (form.elements.namedItem("name") as HTMLInputElement).value;
+  const email = (form.elements.namedItem("email") as HTMLInputElement).value;
+  const password = (form.elements.namedItem("password") as HTMLInputElement).value;
 
-    const registerRes = await fetch("/api/auth/register", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name, email, password }),
-    });
+  const registerRes = await fetch("/api/auth/register", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ name, email, password }),
+  });
 
-    if (!registerRes.ok) { alert("Registration failed. Email might already be in use."); return; }
-
-    const loginRes = await fetch("/api/auth/login", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ email, password }),
-    });
-
-    if (!loginRes.ok) { window.location.href = "/login"; return; }
-    window.location.href = "/account";
+  if (!registerRes.ok) {
+    alert("Registration failed. Email might already be in use.");
+    return;
   }
+
+  const loginRes = await fetch("/api/auth/login", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email, password }),
+  });
+
+  if (!loginRes.ok) {
+    window.location.href = "/login";
+    return;
+  }
+
+  window.location.href = "/account";
+}
 
   return (
     <div className="auth-container">

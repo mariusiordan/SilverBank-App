@@ -10,6 +10,7 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    "coverage/**",
   ]),
   // ✅ Override-uri pentru proiect
   {
@@ -37,5 +38,7 @@ const eslintConfig = defineConfig([
     },
   },
 ]);
+
+
 
 export default eslintConfig;

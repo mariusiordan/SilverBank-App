@@ -77,7 +77,7 @@ jobs:
       - name: Checkout infra repo
         uses: actions/checkout@v5
         with:
-          repository: mariusiordan/terraform-ansible-infrastructure
+          repository: mariusiordan/DevOps-final-project
           token: ${{ secrets.GHCR_TOKEN }}
 
       - name: Install Ansible

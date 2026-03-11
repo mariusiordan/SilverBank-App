@@ -1,80 +1,146 @@
+# .github/workflows/deploy.yml
+# Runs ONLY when code is pushed to main branch
+# Flow: lint + test → build Docker image → push to ghcr.io → deploy to Proxmox
+#
+# Required GitHub Secrets (Settings → Secrets → Actions):
+#   PROXMOX_SSH_KEY  - private SSH key (~/.ssh/id_ed25519) to connect to Proxmox VMs
+#   GHCR_TOKEN       - GitHub Personal Access Token with write:packages permission
+#   VAULT_PASSWORD   - Ansible vault password (same as ~/.vault-password)
+
 name: Deploy
 
 on:
   push:
     branches:
-      - main
+      - main  # only deploy when pushing to main branch
 
 jobs:
+  # ============================================================
+  # JOB 1 - Lint + Tests
+  # If this fails, we stop here - nothing gets deployed
+  # ============================================================
   test:
     name: Lint + Tests
     runs-on: ubuntu-24.04
+
+    # Tell GitHub Actions to run all commands from inside silver-bank/
+    # because our app code is in a subfolder, not the repo root
+    defaults:
+      run:
+        working-directory: silver-bank
+
     steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-node@v6
+      # Download the code from GitHub
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # Install Node.js 20 - no cache because package-lock.json is in subfolder
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
         with:
           node-version: '20'
-          cache: 'npm'
-      - run: npm ci
-      - run: npm run lint
-      - run: npm run test
+          # Note: no cache here because package-lock.json is in silver-bank/
+          # and GitHub Actions cache looks in repo root
 
+      # Install all npm dependencies
+      - name: Install dependencies
+        run: npm ci
+
+      # Check code quality with ESLint
+      - name: Run lint
+        run: npm run lint
+
+      # Run all Vitest tests
+      - name: Run tests
+        run: npm run test
+
+  # ============================================================
+  # JOB 2 - Build Docker image and push to ghcr.io
+  # Only runs if tests passed
+  # ============================================================
   build:
     name: Build and push Docker image
     runs-on: ubuntu-24.04
-    needs: test
+    needs: test  # wait for test job to pass first
+
     permissions:
       contents: read
-      packages: write
-    outputs:
-      image_tag: ${{ steps.tag.outputs.tag }}
-    steps:
-      - uses: actions/checkout@v4
+      packages: write  # needed to push to ghcr.io
 
+    outputs:
+      image_tag: ${{ steps.tag.outputs.tag }}  # pass tag to deploy job
+
+    steps:
+      # Download the code from GitHub
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # Generate image tag from short git SHA
+      # Example: sha-a1b2c3d
       - name: Generate image tag
         id: tag
         run: echo "tag=sha-$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
 
+      # Login to GitHub Container Registry using our secret token
       - name: Login to ghcr.io
         run: echo "${{ secrets.GHCR_TOKEN }}" | docker login ghcr.io -u mariusiordan --password-stdin
 
+      # Setup buildx for multi-platform builds
+      # We need linux/amd64 because Proxmox VMs are amd64, but Mac is arm64
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Build and push
+      # Build the Docker image for linux/amd64 and push directly to ghcr.io
+      # context: ./silver-bank because Dockerfile is in the subfolder
+      - name: Build and push Docker image
         uses: docker/build-push-action@v5
         with:
-          context: .
+          context: ./silver-bank
           platforms: linux/amd64
           push: true
           tags: |
             ghcr.io/mariusiordan/silverbank:${{ steps.tag.outputs.tag }}
             ghcr.io/mariusiordan/silverbank:latest
 
+  # ============================================================
+  # JOB 3 - Deploy to Proxmox using Ansible
+  # Only runs if build passed
+  # ============================================================
   deploy:
     name: Deploy to Proxmox
     runs-on: ubuntu-24.04
-    needs: build
+    needs: build  # wait for build job to pass first
+
     steps:
-      - name: Checkout infra repo
+      # Checkout the infrastructure repo (Terraform + Ansible)
+      # This is a different repo from the app code
+      - name: Checkout infrastructure repo
         uses: actions/checkout@v4
         with:
-          repository: mariusiordan/terraform-ansible-infrastructure
+          repository: mariusiordan/DevOps-final-project
           token: ${{ secrets.GHCR_TOKEN }}
 
+      # Install Ansible on the GitHub Actions runner
       - name: Install Ansible
         run: pip install ansible
 
+      # Setup SSH key so Ansible can connect to Proxmox VMs
       - name: Setup SSH key
         run: |
           mkdir -p ~/.ssh
           echo "${{ secrets.PROXMOX_SSH_KEY }}" > ~/.ssh/id_ed25519
           chmod 600 ~/.ssh/id_ed25519
+          # Disable host key checking - VMs get recreated with Terraform often
           echo "StrictHostKeyChecking no" >> ~/.ssh/config
 
+      # Write the vault password to a file so Ansible can decrypt secrets
       - name: Setup Ansible vault password
-        run: echo "${{ secrets.VAULT_PASSWORD }}" > ~/.vault-password && chmod 600 ~/.vault-password
+        run: |
+          echo "${{ secrets.VAULT_PASSWORD }}" > ~/.vault-password
+          chmod 600 ~/.vault-password
 
+      # Deploy new image to GREEN VM and switch nginx traffic to GREEN
+      # app_tag comes from the build job output (e.g. sha-a1b2c3d)
       - name: Deploy to GREEN
         run: |
           cd ansible

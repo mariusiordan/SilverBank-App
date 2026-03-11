@@ -1,35 +1,165 @@
+# .github/workflows/test.yml
+# Runs on every push and pull request to any branch
+# Tests run in parallel after lint passes
+# If any test fails, the whole workflow fails and deploy is blocked
+#
+# Flow:
+#   lint
+#     ├── test-jwt      ┐
+#     ├── test-auth     ├── all must pass before deploy
+#     └── test-account  ┘
+
 name: Test
 
 on:
   push:
   pull_request:
-  workflow_dispatch:
 
 jobs:
-  test:
-    name: Lint + Tests
+  # ============================================================
+  # JOB 1 - ESLint
+  # Runs first - if lint fails, no tests run
+  # ============================================================
+  lint:
+    name: ESLint
     runs-on: ubuntu-24.04
-
     defaults:
       run:
         working-directory: silver-bank
-
     steps:
-      - name: Checkout
-        uses: actions/checkout@v5
+      - name: Checkout code
+        uses: actions/checkout@v4
 
-      - name: Setup Node
-        uses: actions/setup-node@v6
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
         with:
-          node-version: "20"
-          cache: "npm"
-          cache-dependency-path: silver-bank/package-lock.json
+          node-version: '20'
 
       - name: Install dependencies
         run: npm ci
 
-      - name: Run lint
+      - name: Run ESLint
         run: npm run lint
 
-      - name: Run tests
-        run: npm run test
+  # ============================================================
+  # JOB 2 - JWT Tests
+  # Runs in parallel with other test jobs after lint passes
+  # ============================================================
+  test-jwt:
+    name: JWT Tests
+    runs-on: ubuntu-24.04
+    needs: lint  # wait for lint to pass first
+    defaults:
+      run:
+        working-directory: silver-bank
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install dependencies
+        run: npm ci
+
+      # Run only jwt.test.ts
+      - name: Run JWT tests
+        run: npx vitest run __tests__/jwt.test.ts
+
+  # ============================================================
+  # JOB 3 - Auth Tests (login + register)
+  # Runs in parallel with other test jobs after lint passes
+  # ============================================================
+  test-auth:
+    name: Auth Tests
+    runs-on: ubuntu-24.04
+    needs: lint  # wait for lint to pass first
+    defaults:
+      run:
+        working-directory: silver-bank
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install dependencies
+        run: npm ci
+
+      # Run login and register tests together - they are related (auth flow)
+      - name: Run login tests
+        run: npx vitest run __tests__/login.test.ts
+
+      - name: Run register tests
+        run: npx vitest run __tests__/register.test.ts
+
+  # ============================================================
+  # JOB 4 - Account Tests
+  # Runs in parallel with other test jobs after lint passes
+  # ============================================================
+  test-account:
+    name: Account Tests
+    runs-on: ubuntu-24.04
+    needs: lint  # wait for lint to pass first
+    defaults:
+      run:
+        working-directory: silver-bank
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install dependencies
+        run: npm ci
+
+      # Run only account.test.ts
+      - name: Run account tests
+        run: npx vitest run __tests__/account.test.ts
+
+
+
+
+# name: Test
+
+# on:
+#   push:
+#   pull_request:
+#   workflow_dispatch:
+
+# jobs:
+#   test:
+#     name: Lint + Tests
+#     runs-on: ubuntu-24.04
+
+#     defaults:
+#       run:
+#         working-directory: silver-bank
+
+#     steps:
+#       - name: Checkout
+#         uses: actions/checkout@v5
+
+#       - name: Setup Node
+#         uses: actions/setup-node@v6
+#         with:
+#           node-version: "20"
+#           cache: "npm"
+#           cache-dependency-path: silver-bank/package-lock.json
+
+#       - name: Install dependencies
+#         run: npm ci
+
+#       - name: Run lint
+#         run: npm run lint
+
+#       - name: Run tests
+#         run: npm run test

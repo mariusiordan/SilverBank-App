@@ -9,30 +9,15 @@ jobs:
   test:
     name: Lint + Tests
     runs-on: ubuntu-24.04
-
-    defaults:
-      run:
-        working-directory: silver-bank
-
     steps:
-      - name: Checkout
-        uses: actions/checkout@v5
-
-      - name: Setup Node
-        uses: actions/setup-node@v6
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
         with:
-          node-version: "20"
-          cache: "npm"
-          cache-dependency-path: silver-bank/package-lock.json
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Run lint
-        run: npm run lint
-
-      - name: Run tests
-        run: npm run test
+          node-version: '20'
+          cache: 'npm'
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run test
 
   build:
     name: Build and push Docker image
@@ -43,10 +28,8 @@ jobs:
       packages: write
     outputs:
       image_tag: ${{ steps.tag.outputs.tag }}
-
     steps:
-      - name: Checkout
-        uses: actions/checkout@v5
+      - uses: actions/checkout@v4
 
       - name: Generate image tag
         id: tag
@@ -61,7 +44,7 @@ jobs:
       - name: Build and push
         uses: docker/build-push-action@v5
         with:
-          context: ./silver-bank
+          context: .
           platforms: linux/amd64
           push: true
           tags: |
@@ -72,12 +55,11 @@ jobs:
     name: Deploy to Proxmox
     runs-on: ubuntu-24.04
     needs: build
-
     steps:
       - name: Checkout infra repo
-        uses: actions/checkout@v5
+        uses: actions/checkout@v4
         with:
-          repository: mariusiordan/DevOps-final-project
+          repository: mariusiordan/terraform-ansible-infrastructure
           token: ${{ secrets.GHCR_TOKEN }}
 
       - name: Install Ansible
@@ -89,6 +71,9 @@ jobs:
           echo "${{ secrets.PROXMOX_SSH_KEY }}" > ~/.ssh/id_ed25519
           chmod 600 ~/.ssh/id_ed25519
           echo "StrictHostKeyChecking no" >> ~/.ssh/config
+
+      - name: Setup Ansible vault password
+        run: echo "${{ secrets.VAULT_PASSWORD }}" > ~/.vault-password && chmod 600 ~/.vault-password
 
       - name: Deploy to GREEN
         run: |

@@ -3,6 +3,7 @@ name: Test
 on:
   push:
   pull_request:
+  workflow_dispatch:
 
 jobs:
   test:
@@ -17,22 +18,12 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Debug files
-        run: |
-          pwd
-          ls -la
-          echo "---- silver-bank ----"
-          ls -la silver-bank || true
-          echo "---- lockfile check ----"
-          test -f silver-bank/package-lock.json && echo "lockfile found" || echo "lockfile missing"
-
       - name: Setup Node
         uses: actions/setup-node@v4
-        with:
-          node-version: "20"
-
-          cache: "npm"
-          cache-dependency-path: silver-bank/package-lock.json
+        # with:
+        #   node-version: "20"
+        #   cache: "npm"
+        #   cache-dependency-path: silver-bank/package-lock.json
 
       - name: Install dependencies
         run: npm ci

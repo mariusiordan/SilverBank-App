@@ -1,0 +1,146 @@
+# .github/workflows/staging.yml
+# Trigger: push to staging branch
+# Flow:
+#   lint
+#     ├── test-jwt      ┐
+#     ├── test-auth     ├── build → deploy to staging VM → integration tests
+#     └── test-account  ┘
+
+name: Staging
+
+on:
+  push:
+    branches:
+      - staging
+
+jobs:
+  lint:
+    name: ESLint
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: silver-bank
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - run: npm ci
+      - run: npm run lint
+
+  test-jwt:
+    name: JWT Tests
+    runs-on: ubuntu-24.04
+    needs: lint
+    defaults:
+      run:
+        working-directory: silver-bank
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - run: npm ci
+      - run: npx vitest run __tests__/jwt.test.ts
+
+  test-auth:
+    name: Auth Tests
+    runs-on: ubuntu-24.04
+    needs: lint
+    defaults:
+      run:
+        working-directory: silver-bank
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - run: npm ci
+      - run: npx vitest run __tests__/login.test.ts
+      - run: npx vitest run __tests__/register.test.ts
+
+  test-account:
+    name: Account Tests
+    runs-on: ubuntu-24.04
+    needs: lint
+    defaults:
+      run:
+        working-directory: silver-bank
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - run: npm ci
+      - run: npx vitest run __tests__/account.test.ts
+
+  build:
+    name: Build Docker image
+    runs-on: ubuntu-24.04
+    needs: [test-jwt, test-auth, test-account]
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      image_tag: ${{ steps.tag.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Generate image tag
+        id: tag
+        run: echo "tag=sha-$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
+
+      - name: Login to ghcr.io
+        run: echo "${{ secrets.GHCR_TOKEN }}" | docker login ghcr.io -u mariusiordan --password-stdin
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./silver-bank
+          platforms: linux/amd64
+          push: true
+          tags: |
+            ghcr.io/mariusiordan/silverbank:${{ steps.tag.outputs.tag }}
+            ghcr.io/mariusiordan/silverbank:staging
+
+  deploy-staging:
+    name: Deploy to Staging
+    runs-on: ubuntu-24.04
+    needs: build
+    steps:
+      - name: Checkout infrastructure repo
+        uses: actions/checkout@v4
+        with:
+          repository: mariusiordan/DevOps-final-project
+          token: ${{ secrets.GHCR_TOKEN }}
+
+      - name: Install Ansible
+        run: pip install ansible
+
+      - name: Setup SSH key
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.PROXMOX_SSH_KEY }}" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          echo "StrictHostKeyChecking no" >> ~/.ssh/config
+
+      - name: Setup Ansible vault password
+        run: |
+          echo "${{ secrets.VAULT_PASSWORD }}" > ~/.vault-password
+          chmod 600 ~/.vault-password
+
+      - name: Deploy to staging VM
+        run: |
+          cd proxmox-silverbank/ansible
+          ansible-playbook playbooks/deploy-staging.yml \
+            -e "app_tag=${{ needs.build.outputs.image_tag }}" \
+            -i inventory.ini
+
+      - name: Run integration tests
+        run: |
+          sleep 15
+          curl -f http://192.168.7.70/api/health || exit 1
+          echo "✅ Staging health check passed"

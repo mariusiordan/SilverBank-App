@@ -108,7 +108,7 @@ jobs:
 
   deploy:
     name: Deploy to Production
-    runs-on: ubuntu-24.04
+    runs-on: self-hosted
     needs: build
     environment: production    # ← manual approval aici
     steps:

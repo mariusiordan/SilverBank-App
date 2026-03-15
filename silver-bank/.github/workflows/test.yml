@@ -1,0 +1,94 @@
+# .github/workflows/test.yml
+# Runs on every push and pull request to any branch
+# Flow:
+#   lint
+#     ├── test-jwt      ┐
+#     ├── test-auth     ├── all must pass before merge
+#     └── test-account  ┘
+#     └── comment-on-failure (only if PR + tests fail)
+
+name: Test
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  lint:
+    name: ESLint
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: silver-bank
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - run: npm ci
+      - run: npm run lint
+
+  test-jwt:
+    name: JWT Tests
+    runs-on: ubuntu-24.04
+    needs: lint
+    defaults:
+      run:
+        working-directory: silver-bank
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - run: npm ci
+      - run: npx vitest run __tests__/jwt.test.ts
+
+  test-auth:
+    name: Auth Tests
+    runs-on: ubuntu-24.04
+    needs: lint
+    defaults:
+      run:
+        working-directory: silver-bank
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - run: npm ci
+      - run: npx vitest run __tests__/login.test.ts
+      - run: npx vitest run __tests__/register.test.ts
+
+  test-account:
+    name: Account Tests
+    runs-on: ubuntu-24.04
+    needs: lint
+    defaults:
+      run:
+        working-directory: silver-bank
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - run: npm ci
+      - run: npx vitest run __tests__/account.test.ts
+
+  comment-on-failure:
+    name: Comment on PR
+    runs-on: ubuntu-24.04
+    needs: [test-jwt, test-auth, test-account]
+    if: failure() && github.event_name == 'pull_request'
+    permissions:
+      pull-requests: write
+    steps:
+      - name: Comment on PR
+        uses: actions/github-script@v7
+        with:
+          script: |
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: '❌ **CI Failed** — One or more tests failed on this PR. Please fix before merging.\n\nCheck the [Actions tab](' + context.payload.pull_request.html_url + '/checks) for details.'
+            })

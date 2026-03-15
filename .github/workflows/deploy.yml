@@ -119,7 +119,7 @@ jobs:
           token: ${{ secrets.GHCR_TOKEN }}
 
       - name: Install Ansible
-        run: pip install ansible
+        run: pip install ansible --break-system-packages
 
       - name: Setup SSH key
         run: |

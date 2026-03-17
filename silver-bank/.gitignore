@@ -41,6 +41,7 @@ yarn-error.log*
 next-env.d.ts
 .env
 .env.docker
+!.env.local.example
 
 # Vitest
 coverage/
@@ -48,3 +49,8 @@ __tests__/
 
 # Jenkins
 Jenkinsfile.bak
+
+node_modules/
+dist/
+.env
+*.tsbuildinfo

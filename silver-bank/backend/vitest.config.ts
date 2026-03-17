@@ -14,9 +14,9 @@ export default defineConfig({
       '@': path.resolve(__dirname, '../'),
     },
   },
-  server: {
-    deps: {
-      inline: ['jsonwebtoken', 'bcryptjs'],
-    },
+
+  // 🔑 ASTA REZOLVĂ BUG-UL
+  ssr: {
+    noExternal: ['jsonwebtoken', 'bcryptjs'],
   },
 });

@@ -26,8 +26,11 @@ app.use("/api/cash", cashRoutes);
 app.use("/api/transactions", transactionRoutes);
 app.use("/api/health", healthRoutes);
 
-app.listen(PORT, () => {
-  console.log(`✅ SilverBank API running on port ${PORT}`);
-});
+// Only start server if not in test environment
+if (process.env.NODE_ENV !== 'test') {
+  app.listen(PORT, () => {
+    console.log(`✅ SilverBank API running on port ${PORT}`);
+  });
+}
 
 export default app;

@@ -1,8 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import request from 'supertest';
 import { signToken } from '@/lib/jwt';
 
-// Mock Prisma
-vi.mock('@/lib/prisma', () => ({
+// Mock Prisma before importing app
+vi.mock('@/backend/src/prisma', () => ({
   default: {
     user: {
       findUnique: vi.fn(),
@@ -10,8 +11,8 @@ vi.mock('@/lib/prisma', () => ({
   },
 }));
 
-import prisma from '@/lib/prisma';
-import { GET } from '@/app/api/account/route';
+import prisma from '@/backend/src/prisma';
+import app from '@/backend/src/index';
 
 describe('GET /api/account', () => {
 
@@ -20,7 +21,6 @@ describe('GET /api/account', () => {
   });
 
   it('returnează datele contului pentru user autentificat', async () => {
-    // Simulăm un user cu cont în DB
     (prisma.user.findUnique as any).mockResolvedValue({
       id: 1,
       name: 'Test User',
@@ -33,38 +33,29 @@ describe('GET /api/account', () => {
       }],
     });
 
-    // Creăm un token valid ca și cum userul e logat
     const token = signToken({ userId: 1 });
 
-    const req = new Request('http://localhost:3000/api/account', {
-      headers: {
-        cookie: `token=${token}`,
-      },
-    });
+    const res = await request(app)
+      .get('/api/account')
+      .set('Cookie', `token=${token}`);
 
-    const res = await GET(req);
     expect(res.status).toBe(200);
-
-    const data = await res.json();
-    expect(data.user.email).toBe('test@test.com');
-    expect(data.account.iban).toBe('GB1234567890');
+    expect(res.body.user.email).toBe('test@test.com');
+    expect(res.body.account.iban).toBe('GB1234567890');
   });
 
   it('respinge request fără token', async () => {
-    const req = new Request('http://localhost:3000/api/account');
+    const res = await request(app)
+      .get('/api/account');
 
-    const res = await GET(req);
-    expect(res.status).toBe(401); // 401 = Unauthorized
+    expect(res.status).toBe(401);
   });
 
   it('respinge token invalid', async () => {
-    const req = new Request('http://localhost:3000/api/account', {
-      headers: {
-        cookie: 'token=token-fals-123',
-      },
-    });
+    const res = await request(app)
+      .get('/api/account')
+      .set('Cookie', 'token=token-fals-123');
 
-    const res = await GET(req);
     expect(res.status).toBe(401);
   });
 

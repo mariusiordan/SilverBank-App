@@ -1,7 +1,7 @@
 "use client";
 import "../auth.css";
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000";
+const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
 
 export default function LoginPage() {
   async function handleLogin(e: React.FormEvent<HTMLFormElement>) {

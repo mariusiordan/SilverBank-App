@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import "./account.css";
 import CashTracker from "./CashTracker";
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000";
+const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
 
 interface Transaction {
   type: string;

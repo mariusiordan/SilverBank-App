@@ -48,25 +48,17 @@ jobs:
   test-jwt:
     name: JWT Tests
     runs-on: ubuntu-24.04
-    needs: lint  # wait for lint to pass first
+    needs: lint
     defaults:
       run:
         working-directory: silver-bank
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
         with:
           node-version: '20'
-
-      - name: Install dependencies
-        run: npm ci
-
-      # Run only jwt.test.ts
+      - run: npm ci
       - name: Run JWT tests
-        working-directory: silver-bank/backend
         run: npx vitest run __tests__/jwt.test.ts
 
   # ============================================================

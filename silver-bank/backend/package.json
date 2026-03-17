@@ -9,6 +9,7 @@
     "build": "tsc",
     "start": "node dist/index.js",
     "migrate": "prisma migrate deploy"
+    "postinstall": "cd backend && npm ci"
   },
   "dependencies": {
     "@prisma/client": "^6.0.0",

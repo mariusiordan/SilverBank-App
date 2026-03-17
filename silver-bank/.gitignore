@@ -45,7 +45,6 @@ next-env.d.ts
 
 # Vitest
 coverage/
-__tests__/
 
 # Jenkins
 Jenkinsfile.bak

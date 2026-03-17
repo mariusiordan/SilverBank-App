@@ -66,6 +66,7 @@ jobs:
 
       # Run only jwt.test.ts
       - name: Run JWT tests
+        working-directory: silver-bank/backend
         run: npx vitest run __tests__/jwt.test.ts
 
   # ============================================================
@@ -75,53 +76,31 @@ jobs:
   test-auth:
     name: Auth Tests
     runs-on: ubuntu-24.04
-    needs: lint  # wait for lint to pass first
+    needs: lint
     defaults:
       run:
-        working-directory: silver-bank
+        working-directory: silver-bank/backend
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
         with:
           node-version: '20'
+      - run: npm ci
+      - run: npx vitest run __tests__/login.test.ts
+      - run: npx vitest run __tests__/register.test.ts
 
-      - name: Install dependencies
-        run: npm ci
-
-      # Run login and register tests together - they are related (auth flow)
-      - name: Run login tests
-        run: npx vitest run __tests__/login.test.ts
-
-      - name: Run register tests
-        run: npx vitest run __tests__/register.test.ts
-
-  # ============================================================
-  # JOB 4 - Account Tests
-  # Runs in parallel with other test jobs after lint passes
-  # ============================================================
   test-account:
     name: Account Tests
     runs-on: ubuntu-24.04
-    needs: lint  # wait for lint to pass first
+    needs: lint
     defaults:
       run:
-        working-directory: silver-bank
+        working-directory: silver-bank/backend
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
         with:
           node-version: '20'
-
-      - name: Install dependencies
-        run: npm ci
-
-      # Run only account.test.ts
-      - name: Run account tests
-        run: npx vitest run __tests__/account.test.ts
+      - run: npm ci
+      - run: npx vitest run __tests__/account.test.ts
 

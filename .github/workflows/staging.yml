@@ -160,6 +160,8 @@ jobs:
     runs-on: ubuntu-24.04
     needs: deploy-staging
     steps:
+      - name: Wait for app to start
+        run: sleep 30
       - name: Health check
         run: |
           curl -f http://192.168.7.70:4000/api/health || exit 1
@@ -168,7 +170,7 @@ jobs:
   test-register:
     name:  Register Test
     runs-on: ubuntu-24.04
-    needs: deploy-staging
+    needs: test-health
     steps:
       - name: Test registration
         run: |

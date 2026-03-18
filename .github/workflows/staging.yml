@@ -156,5 +156,5 @@ jobs:
       - name: Run integration tests
         run: |
           sleep 15
-          curl -f http://192.168.7.70:3000/api/health || exit 1
+          curl -f http://192.168.7.70:4000/api/health || exit 1
           echo "✅ Staging health check passed"

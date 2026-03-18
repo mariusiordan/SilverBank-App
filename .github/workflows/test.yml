@@ -94,5 +94,5 @@ jobs:
         with:
           node-version: '20'
       - run: npm ci
-      - run: npx run test __tests__/account.test.ts
+      - run: npx vitest run __tests__/account.test.ts
 

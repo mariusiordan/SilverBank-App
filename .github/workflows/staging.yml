@@ -155,40 +155,48 @@ jobs:
             -e "app_tag=${{ needs.build.outputs.image_tag }}" \
             -i inventory.ini
 
-      - name: Run integration tests
+  test-health:
+    name:  Health Check
+    runs-on: ubuntu-24.04
+    needs: deploy-staging
+    steps:
+      - name: Health check
         run: |
-          sleep 15
-          
-          # Health check
           curl -f http://192.168.7.70:4000/api/health || exit 1
           echo "✅ Health check passed"
-          
-          # Test register cu email unic
+
+  test-register:
+    name:  Register Test
+    runs-on: ubuntu-24.04
+    needs: deploy-staging
+    steps:
+      - name: Test registration
+        run: |
           TEST_EMAIL="ci-test-${GITHUB_RUN_ID}@test.com"
-          
           REGISTER=$(curl -s -o /dev/null -w "%{http_code}" \
             -X POST http://192.168.7.70/api/auth/register \
             -H "Content-Type: application/json" \
             -d "{\"name\":\"CI Test\",\"email\":\"${TEST_EMAIL}\",\"password\":\"test123\"}")
-          
-          if [ "$REGISTER" = "201" ]; then
-            echo "✅ Register test passed"
-          else
-            echo "❌ Register test failed - got $REGISTER"
-            exit 1
-          fi
-          
-          # Test login cu userul creat mai sus
+          [ "$REGISTER" = "201" ] || exit 1
+          echo "✅ Register passed"
+
+  test-login:
+    name:  Login Test
+    runs-on: ubuntu-24.04
+    needs: test-register
+    steps:
+      - name: Test login
+        run: |
+          TEST_EMAIL="ci-test-${GITHUB_RUN_ID}@test.com"
           LOGIN=$(curl -s -o /dev/null -w "%{http_code}" \
             -X POST http://192.168.7.70/api/auth/login \
             -H "Content-Type: application/json" \
             -d "{\"email\":\"${TEST_EMAIL}\",\"password\":\"test123\"}")
-          
-          if [ "$LOGIN" = "200" ]; then
-            echo "✅ Login test passed"
-          else
-            echo "❌ Login test failed - got $LOGIN"
-            exit 1
-          fi
-          
-          echo "✅ All integration tests passed"
+          [ "$LOGIN" = "200" ] || exit 1
+          echo "✅ Login passed"
+
+
+# deploy-staging
+#    │
+#    ▼
+# test-health ──► test-register ──► test-login

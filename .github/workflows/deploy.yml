@@ -159,5 +159,5 @@ jobs:
       - name: Smoke tests
         run: |
           sleep 15
-          curl -f http://192.168.7.50:3000/api/health || exit 1
+          curl -f http://192.168.7.50:/api/health || exit 1
           echo "✅ Production health check passed"

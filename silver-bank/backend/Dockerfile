@@ -6,11 +6,11 @@ WORKDIR /app
 COPY package*.json ./
 RUN npm ci
 
-COPY . .
+COPY tsconfig.json ./
+COPY src ./src
+COPY prisma ./prisma
 
-ARG NEXT_PUBLIC_API_URL=""
-ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL
-
+RUN npx prisma generate
 RUN npm run build
 
 # ─── PRODUCTION STAGE ──────────────────────────────
@@ -20,10 +20,12 @@ WORKDIR /app
 
 ENV NODE_ENV=production
 
-COPY --from=builder /app/public ./public
-COPY --from=builder /app/.next/standalone ./
-COPY --from=builder /app/.next/static ./.next/static
+RUN npm install -g prisma@6
 
-EXPOSE 3000
+COPY --from=builder /app/dist ./dist
+COPY --from=builder /app/node_modules ./node_modules
+COPY --from=builder /app/prisma ./prisma
 
-CMD ["node", "server.js"]
+EXPOSE 4000
+
+CMD ["sh", "-c", "prisma migrate deploy && node dist/index.js"]

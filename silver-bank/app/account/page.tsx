@@ -4,6 +4,8 @@ import { useEffect, useState } from "react";
 import "./account.css";
 import CashTracker from "./CashTracker";
 
+const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
+
 interface Transaction {
   type: string;
   amount: number;
@@ -34,7 +36,9 @@ export default function AccountPage() {
   const [closePin, setClosePin] = useState("");
 
   async function loadAccount() {
-    const res = await fetch("/api/account");
+    const res = await fetch(`${API_URL}/api/account`, {
+      credentials: "include",
+    });
     if (!res.ok) return;
     const d = await res.json();
     setData(d);
@@ -52,7 +56,7 @@ export default function AccountPage() {
 
   const handleTransfer = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    const res = await fetch("/api/transactions", {
+    const res = await fetch(`${API_URL}/api/transactions/transfer`, {
       method: "POST",
       credentials: "include",
       headers: { "Content-Type": "application/json" },
@@ -71,8 +75,10 @@ export default function AccountPage() {
 
   const handleLoan = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    const res = await fetch("/api/transactions/loan", {
+    const res = await fetch(`${API_URL}/api/transactions/loan`, {
       method: "POST",
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ accountId: account.id, amount: Number(loanAmount) }),
     });
     const result = await res.json();
@@ -84,7 +90,7 @@ export default function AccountPage() {
 
   const handleClose = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    const res = await fetch("/api/auth/delete", {
+    const res = await fetch(`${API_URL}/api/auth/delete`, {
       method: "DELETE",
       credentials: "include",
       headers: { "Content-Type": "application/json" },
@@ -138,8 +144,16 @@ export default function AccountPage() {
               </p>
             </div>
           ))}
+              <div style={{
+                  height: '1px',
+                  background: '#eee',
+                  margin: '1.5rem 0'
+                    }} />
+          <div className="cash-tracker-wrapper" >
+            <CashTracker userId={user.id} />
+          </div>
         </section>
-
+          
         <aside className="operations">
           <div className="operation card-transfer">
             <h3>Transfer Money</h3>
@@ -168,8 +182,7 @@ export default function AccountPage() {
           </div>
         </aside>
       </main>
-
-      <CashTracker userId={user.id} />
     </div>
+    
   );
 }

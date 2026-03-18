@@ -3,7 +3,7 @@
 # Flow:
 #   lint
 #     ├── test-jwt      ┐
-#     ├── test-auth     ├── build → deploy to staging VM → integration tests
+#     ├── test-auth     ├── build frontend + backend → deploy to staging VM → health check
 #     └── test-account  ┘
 
 name: Staging
@@ -75,7 +75,7 @@ jobs:
       - run: npx vitest run __tests__/account.test.ts
 
   build:
-    name: Build Docker image
+    name: Build Docker images
     runs-on: ubuntu-24.04
     needs: [test-jwt, test-auth, test-account]
     permissions:
@@ -96,19 +96,35 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Build and push Docker image
+      # Build frontend (Next.js)
+      - name: Build and push frontend image
         uses: docker/build-push-action@v5
         with:
           context: ./silver-bank
+          file: ./silver-bank/Dockerfile
+          platforms: linux/amd64
+          push: true
+          build-args: |
+            NEXT_PUBLIC_API_URL=
+          tags: |
+            ghcr.io/mariusiordan/silverbank-frontend:${{ steps.tag.outputs.tag }}
+            ghcr.io/mariusiordan/silverbank-frontend:staging
+
+      # Build backend (Express)
+      - name: Build and push backend image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./silver-bank/backend
+          file: ./silver-bank/backend/Dockerfile
           platforms: linux/amd64
           push: true
           tags: |
-            ghcr.io/mariusiordan/silverbank:${{ steps.tag.outputs.tag }}
-            ghcr.io/mariusiordan/silverbank:staging
+            ghcr.io/mariusiordan/silverbank-backend:${{ steps.tag.outputs.tag }}
+            ghcr.io/mariusiordan/silverbank-backend:staging
 
   deploy-staging:
     name: Deploy to Staging
-    runs-on: ubuntu-24.04
+    runs-on: self-hosted
     needs: build
     steps:
       - name: Checkout infrastructure repo
@@ -118,7 +134,7 @@ jobs:
           token: ${{ secrets.GHCR_TOKEN }}
 
       - name: Install Ansible
-        run: pip install ansible
+        run: pip install ansible --break-system-packages && echo "$HOME/.local/bin" >> $GITHUB_PATH
 
       - name: Setup SSH key
         run: |
@@ -139,8 +155,47 @@ jobs:
             -e "app_tag=${{ needs.build.outputs.image_tag }}" \
             -i inventory.ini
 
+  integration-tests:
+    name: Integration Tests
+    runs-on: self-hosted
+    needs: deploy-staging
+    steps:
+      - name: Wait for app to start
+        run: sleep 20
+
       - name: Run integration tests
         run: |
-          sleep 15
-          curl -f http://192.168.7.70/api/health || exit 1
-          echo "✅ Staging health check passed"
+          TEST_EMAIL="ci-test-${GITHUB_RUN_ID}@test.com"
+
+          # Health check
+          curl -f http://192.168.7.70:4000/api/health || exit 1
+          echo "✅ Health check passed"
+
+          # Register
+          REGISTER=$(curl -s -o /dev/null -w "%{http_code}" \
+            -X POST http://192.168.7.70/api/auth/register \
+            -H "Content-Type: application/json" \
+            -d "{\"name\":\"CI Test\",\"email\":\"${TEST_EMAIL}\",\"password\":\"test123\"}")
+          [ "$REGISTER" = "201" ] || exit 1
+          echo "✅ Register passed"
+
+          # Login + save cookie
+          LOGIN=$(curl -s -c /tmp/cookies.txt -o /dev/null -w "%{http_code}" \
+            -X POST http://192.168.7.70/api/auth/login \
+            -H "Content-Type: application/json" \
+            -d "{\"email\":\"${TEST_EMAIL}\",\"password\":\"test123\"}")
+          [ "$LOGIN" = "200" ] || exit 1
+          echo "✅ Login passed"
+
+          # Delete test user
+          curl -s -b /tmp/cookies.txt \
+            -X DELETE http://192.168.7.70/api/auth/delete \
+            -H "Content-Type: application/json" > /dev/null
+          echo "✅ Cleanup done"
+
+          echo "✅ All integration tests passed"
+
+# deploy-staging
+#    │
+#    ▼
+# test-health ──► test-register ──► test-login

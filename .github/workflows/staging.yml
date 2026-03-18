@@ -104,6 +104,8 @@ jobs:
           file: ./silver-bank/Dockerfile
           platforms: linux/amd64
           push: true
+          build-args: |
+            NEXT_PUBLIC_API_URL=
           tags: |
             ghcr.io/mariusiordan/silverbank-frontend:${{ steps.tag.outputs.tag }}
             ghcr.io/mariusiordan/silverbank-frontend:staging

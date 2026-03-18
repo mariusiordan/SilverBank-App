@@ -1,13 +1,6 @@
 # .github/workflows/test.yml
-# Runs on every push and pull request to any branch
-# Tests run in parallel after lint passes
-# If any test fails, the whole workflow fails and deploy is blocked
-#
-# Flow:
-#   lint
-#     ├── test-jwt      ┐
-#     ├── test-auth     ├── all must pass before deploy
-#     └── test-account  ┘
+# Runs tests in Docker container - same environment as local
+# Flow: lint → build test container → run all tests
 
 name: Test
 
@@ -16,10 +9,6 @@ on:
   pull_request:
 
 jobs:
-  # ============================================================
-  # JOB 1 - ESLint
-  # Runs first - if lint fails, no tests run
-  # ============================================================
   lint:
     name: ESLint
     runs-on: ubuntu-24.04
@@ -27,24 +16,13 @@ jobs:
       run:
         working-directory: silver-bank
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
         with:
           node-version: '20'
+      - run: npm ci
+      - run: npm run lint
 
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Run ESLint
-        run: npm run lint
-
-  # ============================================================
-  # JOB 2 - JWT Tests
-  # Runs in parallel with other test jobs after lint passes
-  # ============================================================
   test-jwt:
     name: JWT Tests
     runs-on: ubuntu-24.04
@@ -58,41 +36,34 @@ jobs:
         with:
           node-version: '20'
       - run: npm ci
-      - name: Run JWT tests
-        run: npx vitest run __tests__/jwt.test.ts
+      - run: npx vitest run __tests__/jwt.test.ts
 
-  # ============================================================
-  # JOB 3 - Auth Tests (login + register)
-  # Runs in parallel with other test jobs after lint passes
-  # ============================================================
-  test-auth:
-    name: Auth Tests
+  test-backend:
+    name: Backend Tests
     runs-on: ubuntu-24.04
     needs: lint
-    defaults:
-      run:
-        working-directory: silver-bank/backend
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-      - run: npm ci
-      - run: npx vitest run __tests__/login.test.ts
-      - run: npx vitest run __tests__/register.test.ts
+      - name: Build test container
+        run: docker build -t silverbank-test -f silver-bank/Dockerfile.test ./silver-bank
+      - name: Run backend tests
+        run: docker run --rm silverbank-test
 
-  test-account:
-    name: Account Tests
+  comment-on-failure:
+    name: Comment on PR
     runs-on: ubuntu-24.04
-    needs: lint
-    defaults:
-      run:
-        working-directory: silver-bank/backend
+    needs: [test-jwt, test-backend]
+    if: failure() && github.event_name == 'pull_request'
+    permissions:
+      pull-requests: write
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - name: Comment on PR
+        uses: actions/github-script@v7
         with:
-          node-version: '20'
-      - run: npm ci
-      - run: npx vitest run __tests__/account.test.ts
-
+          script: |
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: '❌ **CI Failed** — One or more tests failed on this PR. Please fix before merging.\n\nCheck the [Actions tab](' + context.payload.pull_request.html_url + '/checks) for details.'
+            })

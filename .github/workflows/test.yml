@@ -1,8 +1,5 @@
 # .github/workflows/test.yml
 # Runs on every push and pull request to any branch
-# Tests run in parallel after lint passes
-# If any test fails, the whole workflow fails and deploy is blocked
-#
 # Flow:
 #   lint
 #     ├── test-jwt      ┐
@@ -12,14 +9,12 @@
 name: Test
 
 on:
-  push:
   pull_request:
+    branches:
+      - staging
+      - main
 
 jobs:
-  # ============================================================
-  # JOB 1 - ESLint
-  # Runs first - if lint fails, no tests run
-  # ============================================================
   lint:
     name: ESLint
     runs-on: ubuntu-24.04
@@ -27,101 +22,67 @@ jobs:
       run:
         working-directory: silver-bank
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
         with:
           node-version: '20'
+      - run: npm ci
+      - run: npm run lint
 
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Run ESLint
-        run: npm run lint
-
-  # ============================================================
-  # JOB 2 - JWT Tests
-  # Runs in parallel with other test jobs after lint passes
-  # ============================================================
   test-jwt:
     name: JWT Tests
     runs-on: ubuntu-24.04
-    needs: lint  # wait for lint to pass first
+    needs: lint
     defaults:
       run:
         working-directory: silver-bank
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
         with:
           node-version: '20'
+      - run: npm ci
+      - run: npx vitest run __tests__/jwt.test.ts
 
-      - name: Install dependencies
-        run: npm ci
-
-      # Run only jwt.test.ts
-      - name: Run JWT tests
-        run: npx vitest run __tests__/jwt.test.ts
-
-  # ============================================================
-  # JOB 3 - Auth Tests (login + register)
-  # Runs in parallel with other test jobs after lint passes
-  # ============================================================
   test-auth:
     name: Auth Tests
     runs-on: ubuntu-24.04
-    needs: lint  # wait for lint to pass first
-    defaults:
-      run:
-        working-directory: silver-bank
+    needs: lint
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+      - name: Build test container
+        run: docker build -t silverbank-test -f silver-bank/Dockerfile.test ./silver-bank
+      - name: Run auth tests
+        run: |
+          docker run --rm silverbank-test \
+            npx vitest run backend/__tests__/login.test.ts backend/__tests__/register.test.ts
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-
-      - name: Install dependencies
-        run: npm ci
-
-      # Run login and register tests together - they are related (auth flow)
-      - name: Run login tests
-        run: npx vitest run __tests__/login.test.ts
-
-      - name: Run register tests
-        run: npx vitest run __tests__/register.test.ts
-
-  # ============================================================
-  # JOB 4 - Account Tests
-  # Runs in parallel with other test jobs after lint passes
-  # ============================================================
   test-account:
     name: Account Tests
     runs-on: ubuntu-24.04
-    needs: lint  # wait for lint to pass first
-    defaults:
-      run:
-        working-directory: silver-bank
+    needs: lint
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-
-      - name: Install dependencies
-        run: npm ci
-
-      # Run only account.test.ts
+      - uses: actions/checkout@v4
+      - name: Build test container
+        run: docker build -t silverbank-test -f silver-bank/Dockerfile.test ./silver-bank
       - name: Run account tests
-        run: npx vitest run __tests__/account.test.ts
+        run: docker run --rm silverbank-test npx vitest run backend/__tests__/account.test.ts
 
+  comment-on-failure:
+    name: Comment on PR
+    runs-on: ubuntu-24.04
+    needs: [test-jwt, test-auth, test-account]
+    if: failure() && github.event_name == 'pull_request'
+    permissions:
+      pull-requests: write
+    steps:
+      - name: Comment on PR
+        uses: actions/github-script@v7
+        with:
+          script: |
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: '❌ **CI Failed** — One or more tests failed on this PR. Please fix before merging.\n\nCheck the [Actions tab](' + context.payload.pull_request.html_url + '/checks) for details.'
+            })

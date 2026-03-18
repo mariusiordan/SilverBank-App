@@ -1,6 +1,10 @@
 # .github/workflows/test.yml
-# Runs tests in Docker container - same environment as local
-# Flow: lint → build test container → run all tests
+# Runs on every push and pull request to any branch
+# Flow:
+#   lint
+#     ├── test-jwt      ┐
+#     ├── test-auth     ├── all must pass before deploy
+#     └── test-account  ┘
 
 name: Test
 
@@ -38,21 +42,34 @@ jobs:
       - run: npm ci
       - run: npx vitest run __tests__/jwt.test.ts
 
-  test-backend:
-    name: Backend Tests
+  test-auth:
+    name: Auth Tests
     runs-on: ubuntu-24.04
     needs: lint
     steps:
       - uses: actions/checkout@v4
       - name: Build test container
         run: docker build -t silverbank-test -f silver-bank/Dockerfile.test ./silver-bank
-      - name: Run backend tests
-        run: docker run --rm silverbank-test
+      - name: Run auth tests
+        run: |
+          docker run --rm silverbank-test \
+            npx vitest run backend/__tests__/login.test.ts backend/__tests__/register.test.ts
+
+  test-account:
+    name: Account Tests
+    runs-on: ubuntu-24.04
+    needs: lint
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build test container
+        run: docker build -t silverbank-test -f silver-bank/Dockerfile.test ./silver-bank
+      - name: Run account tests
+        run: docker run --rm silverbank-test npx vitest run backend/__tests__/account.test.ts
 
   comment-on-failure:
     name: Comment on PR
     runs-on: ubuntu-24.04
-    needs: [test-jwt, test-backend]
+    needs: [test-jwt, test-auth, test-account]
     if: failure() && github.event_name == 'pull_request'
     permissions:
       pull-requests: write

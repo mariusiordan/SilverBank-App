@@ -14,7 +14,8 @@ describe('JWT Functions', () => {
     const token = signToken({ userId: 42 });
     const decoded = verifyToken(token);
     expect(decoded).not.toBeNull();
-    expect(decoded?.userId).toBe(42);
+    // expect(decoded?.userId).toBe(42);
+    expect(decoded?.userId).toBe(999); // intentional fail
   });
 
   it('verifyToken returnează null pentru token invalid', () => {

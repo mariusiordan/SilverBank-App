@@ -93,7 +93,6 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
-      - run: echo "printing path: $(pwd)"
       - run: npm ci
       - run: npx run test __tests__/account.test.ts
 

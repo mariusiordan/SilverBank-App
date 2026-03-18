@@ -158,5 +158,37 @@ jobs:
       - name: Run integration tests
         run: |
           sleep 15
+          
+          # Health check
           curl -f http://192.168.7.70:4000/api/health || exit 1
-          echo "✅ Staging health check passed"
+          echo "✅ Health check passed"
+          
+          # Test register cu email unic
+          TEST_EMAIL="ci-test-${GITHUB_RUN_ID}@test.com"
+          
+          REGISTER=$(curl -s -o /dev/null -w "%{http_code}" \
+            -X POST http://192.168.7.70/api/auth/register \
+            -H "Content-Type: application/json" \
+            -d "{\"name\":\"CI Test\",\"email\":\"${TEST_EMAIL}\",\"password\":\"test123\"}")
+          
+          if [ "$REGISTER" = "201" ]; then
+            echo "✅ Register test passed"
+          else
+            echo "❌ Register test failed - got $REGISTER"
+            exit 1
+          fi
+          
+          # Test login cu userul creat mai sus
+          LOGIN=$(curl -s -o /dev/null -w "%{http_code}" \
+            -X POST http://192.168.7.70/api/auth/login \
+            -H "Content-Type: application/json" \
+            -d "{\"email\":\"${TEST_EMAIL}\",\"password\":\"test123\"}")
+          
+          if [ "$LOGIN" = "200" ]; then
+            echo "✅ Login test passed"
+          else
+            echo "❌ Login test failed - got $LOGIN"
+            exit 1
+          fi
+          
+          echo "✅ All integration tests passed"

@@ -155,26 +155,23 @@ jobs:
             -e "app_tag=${{ needs.build.outputs.image_tag }}" \
             -i inventory.ini
 
-  test-health:
-    name:  Health Check
-    runs-on: self-hosted    
+  integration-tests:
+    name: Integration Tests
+    runs-on: self-hosted
     needs: deploy-staging
     steps:
       - name: Wait for app to start
-        run: sleep 30
-      - name: Health check
+        run: sleep 20
+
+      - name: Run integration tests
         run: |
+          TEST_EMAIL="ci-test-${GITHUB_RUN_ID}@test.com"
+
+          # Health check
           curl -f http://192.168.7.70:4000/api/health || exit 1
           echo "✅ Health check passed"
 
-  test-register:
-    name:  Register Test
-    runs-on: self-hosted    
-    needs: test-health
-    steps:
-      - name: Test registration
-        run: |
-          TEST_EMAIL="ci-test-${GITHUB_RUN_ID}@test.com"
+          # Register
           REGISTER=$(curl -s -o /dev/null -w "%{http_code}" \
             -X POST http://192.168.7.70/api/auth/register \
             -H "Content-Type: application/json" \
@@ -182,21 +179,21 @@ jobs:
           [ "$REGISTER" = "201" ] || exit 1
           echo "✅ Register passed"
 
-  test-login:
-    name:  Login Test
-    runs-on: self-hosted    
-    needs: test-register
-    steps:
-      - name: Test login
-        run: |
-          TEST_EMAIL="ci-test-${GITHUB_RUN_ID}@test.com"
-          LOGIN=$(curl -s -o /dev/null -w "%{http_code}" \
+          # Login + save cookie
+          LOGIN=$(curl -s -c /tmp/cookies.txt -o /dev/null -w "%{http_code}" \
             -X POST http://192.168.7.70/api/auth/login \
             -H "Content-Type: application/json" \
             -d "{\"email\":\"${TEST_EMAIL}\",\"password\":\"test123\"}")
           [ "$LOGIN" = "200" ] || exit 1
           echo "✅ Login passed"
 
+          # Delete test user
+          curl -s -b /tmp/cookies.txt \
+            -X DELETE http://192.168.7.70/api/auth/delete \
+            -H "Content-Type: application/json" > /dev/null
+          echo "✅ Cleanup done"
+
+          echo "✅ All integration tests passed"
 
 # deploy-staging
 #    │

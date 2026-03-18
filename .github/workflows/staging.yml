@@ -157,7 +157,7 @@ jobs:
 
   test-health:
     name:  Health Check
-    runs-on: ubuntu-24.04
+    runs-on: self-hosted    
     needs: deploy-staging
     steps:
       - name: Wait for app to start
@@ -169,7 +169,7 @@ jobs:
 
   test-register:
     name:  Register Test
-    runs-on: ubuntu-24.04
+    runs-on: self-hosted    
     needs: test-health
     steps:
       - name: Test registration
@@ -184,7 +184,7 @@ jobs:
 
   test-login:
     name:  Login Test
-    runs-on: ubuntu-24.04
+    runs-on: self-hosted    
     needs: test-register
     steps:
       - name: Test login

@@ -3,7 +3,7 @@
 # Flow:
 #   lint
 #     ├── test-jwt      ┐
-#     ├── test-auth     ├── build frontend + backend → manual approval → Blue/Green → smoke tests
+#     ├── test-auth     ├── build frontend + backend → manual approval → Blue/Green → smoke tests → promote to :latest
 #     └── test-account  ┘
 
 name: Deploy
@@ -88,7 +88,11 @@ jobs:
 
       - name: Generate image tag
         id: tag
-        run: echo "tag=sha-$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
+        run: |
+          VERSION="v1.0"
+          DATE=$(date +%Y-%m-%d)
+          SHA=$(git rev-parse --short HEAD)
+          echo "tag=${VERSION}-prod-${DATE}-sha-${SHA}" >> $GITHUB_OUTPUT
 
       - name: Login to ghcr.io
         run: echo "${{ secrets.GHCR_TOKEN }}" | docker login ghcr.io -u mariusiordan --password-stdin
@@ -96,7 +100,6 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      # Build frontend (Next.js)
       - name: Build and push frontend image
         uses: docker/build-push-action@v5
         with:
@@ -106,9 +109,7 @@ jobs:
           push: true
           tags: |
             ghcr.io/mariusiordan/silverbank-frontend:${{ steps.tag.outputs.tag }}
-            ghcr.io/mariusiordan/silverbank-frontend:latest
 
-      # Build backend (Express)
       - name: Build and push backend image
         uses: docker/build-push-action@v5
         with:
@@ -118,7 +119,6 @@ jobs:
           push: true
           tags: |
             ghcr.io/mariusiordan/silverbank-backend:${{ steps.tag.outputs.tag }}
-            ghcr.io/mariusiordan/silverbank-backend:latest
 
   deploy:
     name: Deploy to Production
@@ -149,7 +149,7 @@ jobs:
           echo "${{ secrets.VAULT_PASSWORD }}" > ~/.vault-password
           chmod 600 ~/.vault-password
 
-      - name: Deploy to idle environment
+      - name: Deploy to idle environment + monitor 10min + promote to latest
         run: |
           cd proxmox-silverbank/ansible
           ansible-playbook playbooks/deploy-production.yml \
@@ -159,5 +159,5 @@ jobs:
       - name: Smoke tests
         run: |
           sleep 15
-          curl -f http://192.168.7.50:/api/health || exit 1
+          curl -f http://192.168.7.50/api/health || exit 1
           echo "✅ Production health check passed"

@@ -3,7 +3,7 @@
 # Flow:
 #   lint
 #     ├── test-jwt      ┐
-#     ├── test-auth     ├── build frontend + backend → deploy to staging VM → health check
+#     ├── test-auth     ├── build frontend + backend → deploy to staging VM → integration tests
 #     └── test-account  ┘
 
 name: Staging
@@ -88,7 +88,11 @@ jobs:
 
       - name: Generate image tag
         id: tag
-        run: echo "tag=sha-$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
+        run: |
+          VERSION="v1.0"
+          DATE=$(date +%Y-%m-%d)
+          SHA=$(git rev-parse --short HEAD)
+          echo "tag=${VERSION}-staging-${DATE}-sha-${SHA}" >> $GITHUB_OUTPUT
 
       - name: Login to ghcr.io
         run: echo "${{ secrets.GHCR_TOKEN }}" | docker login ghcr.io -u mariusiordan --password-stdin
@@ -96,7 +100,6 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      # Build frontend (Next.js)
       - name: Build and push frontend image
         uses: docker/build-push-action@v5
         with:
@@ -104,13 +107,10 @@ jobs:
           file: ./silver-bank/Dockerfile
           platforms: linux/amd64
           push: true
-          build-args: |
-            NEXT_PUBLIC_API_URL=
           tags: |
             ghcr.io/mariusiordan/silverbank-frontend:${{ steps.tag.outputs.tag }}
             ghcr.io/mariusiordan/silverbank-frontend:staging
 
-      # Build backend (Express)
       - name: Build and push backend image
         uses: docker/build-push-action@v5
         with:
@@ -194,8 +194,3 @@ jobs:
           echo "✅ Cleanup done"
 
           echo "✅ All integration tests passed"
-
-# deploy-staging
-#    │
-#    ▼
-# test-health ──► test-register ──► test-login

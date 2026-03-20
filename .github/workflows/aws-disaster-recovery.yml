@@ -1,0 +1,147 @@
+# .github/workflows/aws-disaster-recovery.yml
+# Manual trigger only — activated when Proxmox is down
+# Provisions AWS infrastructure and deploys the latest stable image
+#
+# Flow:
+#   1. Terraform apply — creates/updates AWS VMs
+#   2. Ansible site.yml — configures Docker, nginx, postgres, app
+#   3. Health check — verifies the app is running
+#
+# Prerequisites:
+#   - AWS credentials configured in GitHub secrets
+#   - Latest stable image already pushed to ghcr.io as :latest
+#   - Terraform state stored in S3 (silverbank-tfstate-mariusiordan)
+
+name: AWS Disaster Recovery
+
+on:
+  workflow_dispatch:
+    inputs:
+      action:
+        description: 'Action to perform'
+        required: true
+        default: 'deploy'
+        type: choice
+        options:
+          - deploy    # provision + configure + deploy app
+          - destroy   # tear down all AWS infrastructure
+
+jobs:
+  terraform:
+    name: Terraform ${{ github.event.inputs.action }}
+    runs-on: ubuntu-24.04
+    outputs:
+      edge_ip: ${{ steps.tf_output.outputs.edge_ip }}
+    steps:
+      - name: Checkout infrastructure repo
+        uses: actions/checkout@v4
+        with:
+          repository: mariusiordan/DevOps-final-project
+          token: ${{ secrets.GHCR_TOKEN }}
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id:     ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region:            eu-west-2
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_wrapper: false
+
+      - name: Terraform Init
+        working-directory: aws-silverbank/terraform
+        run: terraform init
+
+      - name: Terraform Apply
+        if: github.event.inputs.action == 'deploy'
+        working-directory: aws-silverbank/terraform
+        run: |
+          terraform apply -auto-approve \
+            -var="ssh_public_key=${{ secrets.SSH_PUBLIC_KEY }}" \
+            -var="your_home_ip=${{ secrets.HOME_IP }}"
+
+      - name: Get Terraform outputs
+        if: github.event.inputs.action == 'deploy'
+        id: tf_output
+        working-directory: aws-silverbank/terraform
+        run: |
+          echo "edge_ip=$(terraform output -raw edge_elastic_ip)" >> $GITHUB_OUTPUT
+
+      - name: Terraform Destroy
+        if: github.event.inputs.action == 'destroy'
+        working-directory: aws-silverbank/terraform
+        run: |
+          terraform destroy -auto-approve \
+            -var="ssh_public_key=${{ secrets.SSH_PUBLIC_KEY }}" \
+            -var="your_home_ip=${{ secrets.HOME_IP }}"
+
+  ansible:
+    name: Configure and Deploy
+    runs-on: ubuntu-24.04
+    needs: terraform
+    if: github.event.inputs.action == 'deploy'
+    steps:
+      - name: Checkout infrastructure repo
+        uses: actions/checkout@v4
+        with:
+          repository: mariusiordan/DevOps-final-project
+          token: ${{ secrets.GHCR_TOKEN }}
+
+      - name: Install Ansible
+        run: pip install ansible --break-system-packages
+
+      - name: Setup SSH key
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.PROXMOX_SSH_KEY }}" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          echo "StrictHostKeyChecking no" >> ~/.ssh/config
+
+      - name: Setup Ansible vault password
+        run: |
+          echo "${{ secrets.VAULT_PASSWORD }}" > ~/.vault-password
+          chmod 600 ~/.vault-password
+
+      - name: Wait for EC2 instances to be ready
+        run: |
+          echo "Waiting 60 seconds for EC2 instances to boot..."
+          sleep 60
+
+      - name: Configure AWS infrastructure
+        working-directory: aws-silverbank/ansible
+        run: |
+          ansible-playbook playbooks/site.yml \
+            -i inventory-aws.ini \
+            --vault-password-file ~/.vault-password
+
+      - name: Wait for containers to be healthy
+        run: |
+          echo "Waiting 90 seconds for Docker containers to start..."
+          sleep 90
+
+      - name: Health check
+        run: |
+          curl -f http://$\{\{ needs.terraform.outputs.edge_ip }}/api/health || exit 1
+          echo "✅ AWS DR is live at http://${{ needs.terraform.outputs.edge_ip }}"
+
+  notify:
+    name: Summary
+    runs-on: ubuntu-24.04
+    needs: [terraform, ansible]
+    if: always()
+    steps:
+      - name: DR Activated
+        if: github.event.inputs.action == 'deploy' && needs.ansible.result == 'success'
+        run: |
+          echo "✅ AWS Disaster Recovery ACTIVE"
+          echo "🌐 Application URL: http://${{ needs.terraform.outputs.edge_ip }}"
+          echo "📋 Action required: Update DNS to point to ${{ needs.terraform.outputs.edge_ip }}"
+
+      - name: DR Destroyed
+        if: github.event.inputs.action == 'destroy'
+        run: |
+          echo "✅ AWS infrastructure destroyed"
+          echo "💰 All costs stopped"

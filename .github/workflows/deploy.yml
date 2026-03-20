@@ -3,7 +3,7 @@
 # Flow:
 #   lint
 #     ├── test-jwt      ┐
-#     ├── test-auth     ├── build frontend + backend → manual approval → Blue/Green → smoke tests → promote to :latest
+#     ├── test-auth     ├── build → manual approval → Blue/Green → smoke tests → AWS update (if active)
 #     └── test-account  ┘
 
 name: Deploy
@@ -149,7 +149,7 @@ jobs:
           echo "${{ secrets.VAULT_PASSWORD }}" > ~/.vault-password
           chmod 600 ~/.vault-password
 
-      - name: Deploy to idle environment + monitor 10min + promote to latest
+      - name: Deploy to idle environment + monitor + promote to latest
         run: |
           cd proxmox-silverbank/ansible
           ansible-playbook playbooks/deploy-production.yml \
@@ -161,3 +161,61 @@ jobs:
           sleep 15
           curl -f http://192.168.7.50/api/health || exit 1
           echo "✅ Production health check passed"
+
+  aws-update:
+    name: Update AWS DR (if active)
+    runs-on: ubuntu-24.04
+    needs: deploy
+    steps:
+      - name: Checkout infrastructure repo
+        uses: actions/checkout@v4
+        with:
+          repository: mariusiordan/DevOps-final-project
+          token: ${{ secrets.GHCR_TOKEN }}
+
+      - name: Check if AWS DR is active
+        id: aws_check
+        run: |
+          if curl -sf --max-time 10 http://13.41.182.213/api/health > /dev/null 2>&1; then
+            echo "active=true" >> $GITHUB_OUTPUT
+            echo "✅ AWS DR is active - will update to latest"
+          else
+            echo "active=false" >> $GITHUB_OUTPUT
+            echo "⏭️ AWS DR is not active - skipping"
+          fi
+
+      - name: Install Ansible
+        if: steps.aws_check.outputs.active == 'true'
+        run: pip install ansible --break-system-packages
+
+      - name: Setup SSH key
+        if: steps.aws_check.outputs.active == 'true'
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.PROXMOX_SSH_KEY }}" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          echo "StrictHostKeyChecking no" >> ~/.ssh/config
+
+      - name: Setup Ansible vault password
+        if: steps.aws_check.outputs.active == 'true'
+        run: |
+          echo "${{ secrets.VAULT_PASSWORD }}" > ~/.vault-password
+          chmod 600 ~/.vault-password
+
+      - name: Update app on AWS DR
+        if: steps.aws_check.outputs.active == 'true'
+        working-directory: aws-silverbank/ansible
+        run: |
+          # Pull and restart containers with latest image
+          # app_tag=latest because :latest was just promoted by Proxmox pipeline
+          ansible-playbook playbooks/deploy-production.yml \
+            -i inventory-aws.ini \
+            -e "app_tag=latest" \
+            --vault-password-file ~/.vault-password
+
+      - name: Health check AWS
+        if: steps.aws_check.outputs.active == 'true'
+        run: |
+          sleep 30
+          curl -f http://13.41.182.213/api/health || exit 1
+          echo "✅ AWS DR updated successfully"

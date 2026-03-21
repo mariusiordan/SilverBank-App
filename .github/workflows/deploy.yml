@@ -161,3 +161,58 @@ jobs:
           sleep 15
           curl -f http://192.168.7.50/api/health || exit 1
           echo "✅ Production health check passed"
+  aws-update:
+    name: Update AWS DR (if active)
+    runs-on: ubuntu-24.04
+    needs: deploy
+    steps:
+      - name: Checkout infrastructure repo
+        uses: actions/checkout@v4
+        with:
+          repository: mariusiordan/DevOps-final-project
+          token: ${{ secrets.GHCR_TOKEN }}
+
+      - name: Check if AWS DR is active
+        id: aws_check
+        run: |
+          if curl -sf --max-time 10 http://13.41.182.213/api/health > /dev/null 2>&1; then
+            echo "active=true" >> $GITHUB_OUTPUT
+            echo "✅ AWS Disaster Recovery is active — updating to the latest configuration to ensure full failover readiness and consistency."
+          else
+            echo "active=false" >> $GITHUB_OUTPUT
+            echo "⏭️ AWS Disaster Recovery is not active — skipping update as no failover configuration is currently enabled."
+          fi
+
+      - name: Install Ansible
+        if: steps.aws_check.outputs.active == 'true'
+        run: pip install ansible --break-system-packages
+
+      - name: Setup SSH key
+        if: steps.aws_check.outputs.active == 'true'
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.PROXMOX_SSH_KEY }}" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          echo "StrictHostKeyChecking no" >> ~/.ssh/config
+
+      - name: Setup Ansible vault password
+        if: steps.aws_check.outputs.active == 'true'
+        run: |
+          echo "${{ secrets.VAULT_PASSWORD }}" > ~/.vault-password
+          chmod 600 ~/.vault-password
+
+      - name: Update app on AWS DR
+        if: steps.aws_check.outputs.active == 'true'
+        working-directory: aws-silverbank/ansible
+        run: |
+          ansible-playbook playbooks/deploy-production.yml \
+            -i inventory-aws.ini \
+            -e "app_tag=latest" \
+            --vault-password-file ~/.vault-password
+
+      - name: Health check AWS
+        if: steps.aws_check.outputs.active == 'true'
+        run: |
+          sleep 30
+          curl -f http://13.41.182.213/api/health || exit 1
+          echo "✅ AWS Disaster Recovery configuration updated successfully — failover and recovery procedures are now aligned with the latest infrastructure state."

@@ -201,6 +201,31 @@ jobs:
           echo "${{ secrets.VAULT_PASSWORD }}" > ~/.vault-password
           chmod 600 ~/.vault-password
 
+      - name: Generate AWS inventory
+        if: steps.aws_check.outputs.active == 'true'
+        run: |
+          mkdir -p aws-silverbank/ansible
+          cat > aws-silverbank/ansible/inventory-aws.ini << 'INI'
+          [edge]
+          edge-nginx ansible_host=13.41.182.213 ansible_user=ubuntu ansible_ssh_private_key_file=~/.ssh/id_ed25519 ansible_ssh_common_args='-o StrictHostKeyChecking=no'
+
+          [prod]
+          prod-vm1-BLUE ansible_host=10.0.2.165
+
+          [prod:vars]
+          ansible_user=ubuntu
+          ansible_ssh_private_key_file=~/.ssh/id_ed25519
+          ansible_ssh_common_args='-o StrictHostKeyChecking=no -o ProxyJump=ubuntu@13.41.182.213'
+
+          [db]
+          db-postgresql ansible_host=10.0.2.194
+
+          [db:vars]
+          ansible_user=ubuntu
+          ansible_ssh_private_key_file=~/.ssh/id_ed25519
+          ansible_ssh_common_args='-o StrictHostKeyChecking=no -o ProxyJump=ubuntu@13.41.182.213'
+          INI
+
       - name: Update app on AWS DR
         if: steps.aws_check.outputs.active == 'true'
         working-directory: aws-silverbank/ansible

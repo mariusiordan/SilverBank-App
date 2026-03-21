@@ -163,7 +163,7 @@ jobs:
           echo "✅ Production health check passed"
   aws-update:
     name: Update AWS DR (if active)
-    runs-on: ubuntu-24.04
+    runs-on: self-hosted
     needs: deploy
     steps:
       - name: Checkout infrastructure repo

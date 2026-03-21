@@ -185,7 +185,9 @@ jobs:
 
       - name: Install Ansible
         if: steps.aws_check.outputs.active == 'true'
-        run: pip install ansible --break-system-packages
+        run: |
+          pip install ansible --break-system-packages
+          echo "$HOME/.local/bin" >> $GITHUB_PATH
 
       - name: Setup SSH key
         if: steps.aws_check.outputs.active == 'true'

@@ -44,6 +44,10 @@ jobs:
       - name: Generate production image tag
         id: tag
         run: |
+          # Application version — must match the version set in staging.yml
+          # Increment this together with staging.yml when releasing a new version
+          # This tag is applied to the image promoted from ':staging' to production
+          # After a successful 10-minute health check, this tag is promoted to ':latest'
           VERSION="v1.0"
           DATE=$(date +%Y-%m-%d)
           SHA=$(git rev-parse --short HEAD)

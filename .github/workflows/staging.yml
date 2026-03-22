@@ -1,9 +1,11 @@
 # .github/workflows/staging.yml
 # Trigger: push to staging branch
+#
+# Pipeline 2 - Staging Deployment
 # Flow:
 #   lint
 #     ├── test-jwt      ┐
-#     ├── test-auth     ├── build frontend + backend → deploy to staging VM → integration tests
+#     ├── test-auth     ├── build-images → push-images → deploy-staging → integration-tests
 #     └── test-account  ┘
 
 name: Staging
@@ -14,6 +16,11 @@ on:
       - staging
 
 jobs:
+  # ============================================================
+  # JOB 1 - Lint
+  # Runs ESLint static analysis on the codebase
+  # Catches syntax errors and code style issues before running tests
+  # ============================================================
   lint:
     name: ESLint
     runs-on: ubuntu-24.04
@@ -22,12 +29,28 @@ jobs:
         working-directory: silver-bank
     steps:
       - uses: actions/checkout@v4
+
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
-      - run: npm ci
-      - run: npm run lint
 
+      - name: Install dependencies
+        run: |
+          echo "Installing Node.js dependencies..."
+          npm ci
+          echo "OK - Dependencies installed"
+
+      - name: Run ESLint
+        run: |
+          echo "Running ESLint static analysis..."
+          npm run lint
+          echo "✅ OK - Lint passed"
+
+  # ============================================================
+  # JOB 2 - JWT Tests
+  # Validates JWT token generation, signing, and verification
+  # Runs in parallel with Auth and Account tests after lint passes
+  # ============================================================
   test-jwt:
     name: JWT Tests
     runs-on: ubuntu-24.04
@@ -37,12 +60,25 @@ jobs:
         working-directory: silver-bank
     steps:
       - uses: actions/checkout@v4
+
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
-      - run: npm ci
-      - run: npx vitest run __tests__/jwt.test.ts
 
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run JWT tests
+        run: |
+          echo "Running JWT unit tests..."
+          npx vitest run __tests__/jwt.test.ts
+          echo "✅ OK - JWT tests passed"
+
+  # ============================================================
+  # JOB 3 - Auth Tests
+  # Tests user authentication flows: login and registration
+  # Runs in parallel with JWT and Account tests after lint passes
+  # ============================================================
   test-auth:
     name: Auth Tests
     runs-on: ubuntu-24.04
@@ -52,13 +88,26 @@ jobs:
         working-directory: silver-bank
     steps:
       - uses: actions/checkout@v4
+
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
-      - run: npm ci
-      - run: npx vitest run __tests__/login.test.ts
-      - run: npx vitest run __tests__/register.test.ts
 
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run auth tests
+        run: |
+          echo "Running authentication unit tests..."
+          npx vitest run __tests__/login.test.ts
+          npx vitest run __tests__/register.test.ts
+          echo "✅ OK - Auth tests passed"
+
+  # ============================================================
+  # JOB 4 - Account Tests
+  # Tests account management operations
+  # Runs in parallel with JWT and Auth tests after lint passes
+  # ============================================================
   test-account:
     name: Account Tests
     runs-on: ubuntu-24.04
@@ -68,14 +117,28 @@ jobs:
         working-directory: silver-bank
     steps:
       - uses: actions/checkout@v4
+
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
-      - run: npm ci
-      - run: npx vitest run __tests__/account.test.ts
 
-  build:
-    name: Build Docker images
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run account tests
+        run: |
+          echo "Running account management unit tests..."
+          npx vitest run __tests__/account.test.ts
+          echo "✅ OK - Account tests passed"
+
+  # ============================================================
+  # JOB 5 - Build Docker Images
+  # Builds frontend (Next.js) and backend (Express.js) Docker images
+  # Only runs after all three test suites pass
+  # Uses multi-stage Dockerfiles to produce optimized production images
+  # ============================================================
+  build-images:
+    name: Build Docker Images
     runs-on: ubuntu-24.04
     needs: [test-jwt, test-auth, test-account]
     permissions:
@@ -92,40 +155,123 @@ jobs:
           VERSION="v1.0"
           DATE=$(date +%Y-%m-%d)
           SHA=$(git rev-parse --short HEAD)
-          echo "tag=${VERSION}-staging-${DATE}-sha-${SHA}" >> $GITHUB_OUTPUT
-
-      - name: Login to ghcr.io
-        run: echo "${{ secrets.GHCR_TOKEN }}" | docker login ghcr.io -u mariusiordan --password-stdin
+          TAG="${VERSION}-staging-${DATE}-sha-${SHA}"
+          echo "tag=${TAG}" >> $GITHUB_OUTPUT
+          echo "🏷️ Image tag: ${TAG}"
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Build and push frontend image
-        uses: docker/build-push-action@v5
+      - name: Build frontend image
+        run: |
+          echo "Building frontend Docker image (Next.js)..."
+          echo "This step compiles the React application and creates a production-ready image"
+        
+      - uses: docker/build-push-action@v5
+        with:
+          context: ./silver-bank
+          file: ./silver-bank/Dockerfile
+          platforms: linux/amd64
+          push: false
+          tags: |
+            ghcr.io/mariusiordan/silverbank-frontend:${{ steps.tag.outputs.tag }}
+            ghcr.io/mariusiordan/silverbank-frontend:staging
+
+      - name: Build backend image
+        run: |
+          echo "Building backend Docker image (Express.js + Prisma)..."
+          echo "This step compiles TypeScript and creates a production-ready API image"
+
+      - uses: docker/build-push-action@v5
+        with:
+          context: ./silver-bank/backend
+          file: ./silver-bank/backend/Dockerfile
+          platforms: linux/amd64
+          push: false
+          tags: |
+            ghcr.io/mariusiordan/silverbank-backend:${{ steps.tag.outputs.tag }}
+            ghcr.io/mariusiordan/silverbank-backend:staging
+
+      - name: Build summary
+        run: |
+          echo "✅OK - Both Docker images built successfully"
+          echo "Frontend image: ghcr.io/mariusiordan/silverbank-frontend:${{ steps.tag.outputs.tag }}"
+          echo "Backend image:  ghcr.io/mariusiordan/silverbank-backend:${{ steps.tag.outputs.tag }}"
+
+  # ============================================================
+  # JOB 6 - Push Docker Images to Registry
+  # Pushes the built images to GitHub Container Registry (ghcr.io)
+  # Images are tagged with both the unique build tag and 'staging'
+  # The 'staging' tag always points to the latest staging build
+  # ============================================================
+  push-images:
+    name: Push Images to Registry
+    runs-on: ubuntu-24.04
+    needs: build-images
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      image_tag: ${{ needs.build-images.outputs.image_tag }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to GitHub Container Registry
+        run: |
+          echo "Authenticating with GitHub Container Registry (ghcr.io)..."
+          echo "${{ secrets.GHCR_TOKEN }}" | docker login ghcr.io -u mariusiordan --password-stdin
+          echo "✅OK - Authentication successful"
+
+      - name: Push frontend image
+        run: |
+          echo "Pushing frontend image to ghcr.io..."
+          echo "Tag: ${{ needs.build-images.outputs.image_tag }}"
+
+      - uses: docker/build-push-action@v5
         with:
           context: ./silver-bank
           file: ./silver-bank/Dockerfile
           platforms: linux/amd64
           push: true
           tags: |
-            ghcr.io/mariusiordan/silverbank-frontend:${{ steps.tag.outputs.tag }}
+            ghcr.io/mariusiordan/silverbank-frontend:${{ needs.build-images.outputs.image_tag }}
             ghcr.io/mariusiordan/silverbank-frontend:staging
 
-      - name: Build and push backend image
-        uses: docker/build-push-action@v5
+      - name: Push backend image
+        run: |
+          echo "Pushing backend image to ghcr.io..."
+          echo "Tag: ${{ needs.build-images.outputs.image_tag }}"
+
+      - uses: docker/build-push-action@v5
         with:
           context: ./silver-bank/backend
           file: ./silver-bank/backend/Dockerfile
           platforms: linux/amd64
           push: true
           tags: |
-            ghcr.io/mariusiordan/silverbank-backend:${{ steps.tag.outputs.tag }}
+            ghcr.io/mariusiordan/silverbank-backend:${{ needs.build-images.outputs.image_tag }}
             ghcr.io/mariusiordan/silverbank-backend:staging
 
+      - name: Push summary
+        run: |
+          echo "✅ OK - Both images pushed to GitHub Container Registry"
+          echo "Frontend: ghcr.io/mariusiordan/silverbank-frontend:${{ needs.build-images.outputs.image_tag }}"
+          echo "Backend:  ghcr.io/mariusiordan/silverbank-backend:${{ needs.build-images.outputs.image_tag }}"
+          echo "Both images also tagged as ':staging' for easy reference"
+
+  # ============================================================
+  # JOB 7 - Deploy to Staging
+  # Pulls the newly pushed images and deploys them to the staging VM
+  # Uses Ansible to manage the deployment process
+  # Staging runs all 3 tiers: frontend, backend, and a local PostgreSQL instance
+  # ============================================================
   deploy-staging:
     name: Deploy to Staging
     runs-on: self-hosted
-    needs: build
+    needs: push-images
     steps:
       - name: Checkout infrastructure repo
         uses: actions/checkout@v4
@@ -134,63 +280,92 @@ jobs:
           token: ${{ secrets.GHCR_TOKEN }}
 
       - name: Install Ansible
-        run: pip install ansible --break-system-packages && echo "$HOME/.local/bin" >> $GITHUB_PATH
+        run: |
+          echo "Installing Ansible..."
+          pip install ansible --break-system-packages
+          echo "$HOME/.local/bin" >> $GITHUB_PATH
+          echo "✅ OK - Ansible installed"
 
       - name: Setup SSH key
         run: |
+          echo "Configuring SSH access to staging VM..."
           mkdir -p ~/.ssh
           echo "${{ secrets.PROXMOX_SSH_KEY }}" > ~/.ssh/id_ed25519
           chmod 600 ~/.ssh/id_ed25519
           echo "StrictHostKeyChecking no" >> ~/.ssh/config
+          echo "✅ OK - SSH configured"
 
       - name: Setup Ansible vault password
         run: |
+          echo "Configuring Ansible Vault for secrets decryption..."
           echo "${{ secrets.VAULT_PASSWORD }}" > ~/.vault-password
           chmod 600 ~/.vault-password
+          echo "✅ OK - Vault password configured"
 
       - name: Deploy to staging VM
         run: |
+          echo "Starting deployment to staging VM..."
+          echo "Image tag: ${{ needs.push-images.outputs.image_tag }}"
           cd proxmox-silverbank/ansible
           ansible-playbook playbooks/deploy-staging.yml \
-            -e "app_tag=${{ needs.build.outputs.image_tag }}" \
+            -e "app_tag=${{ needs.push-images.outputs.image_tag }}" \
             -i inventory.ini
+          echo "✅ OK - Deployment to staging complete"
 
+  # ============================================================
+  # JOB 8 - Integration Tests
+  # Runs end-to-end API tests against the live staging environment
+  # Tests the full user lifecycle: register, login, and cleanup
+  # These tests verify the application works correctly end-to-end
+  # before promoting to production
+  # ============================================================
   integration-tests:
     name: Integration Tests
     runs-on: self-hosted
     needs: deploy-staging
     steps:
-      - name: Wait for app to start
-        run: sleep 20
+      - name: Wait for application to be ready
+        run: |
+          echo "Waiting for staging application to fully start..."
+          sleep 20
+          echo "✅OK - Wait complete"
 
       - name: Run integration tests
         run: |
           TEST_EMAIL="ci-test-${GITHUB_RUN_ID}@test.com"
+          echo "Starting integration tests against staging environment"
+          echo "Test email: ${TEST_EMAIL}"
 
-          # Health check
+          # Health check - verify the backend API is running and database is connected
+          echo "Running health check..."
           curl -f http://192.168.7.70:4000/api/health || exit 1
-          echo "✅ Health check passed"
+          echo "✅ OK - Health check passed"
 
-          # Register
+          # Register - create a new test user account
+          echo "Testing user registration..."
           REGISTER=$(curl -s -o /dev/null -w "%{http_code}" \
             -X POST http://192.168.7.70/api/auth/register \
             -H "Content-Type: application/json" \
             -d "{\"name\":\"CI Test\",\"email\":\"${TEST_EMAIL}\",\"password\":\"test123\"}")
           [ "$REGISTER" = "201" ] || exit 1
-          echo "✅ Register passed"
+          echo "✅ OK - Registration passed (HTTP 201)"
 
-          # Login + save cookie
+          # Login - authenticate with the test user credentials
+          echo "Testing user login..."
           LOGIN=$(curl -s -c /tmp/cookies.txt -o /dev/null -w "%{http_code}" \
             -X POST http://192.168.7.70/api/auth/login \
             -H "Content-Type: application/json" \
             -d "{\"email\":\"${TEST_EMAIL}\",\"password\":\"test123\"}")
           [ "$LOGIN" = "200" ] || exit 1
-          echo "✅ Login passed"
+          echo "✅ OK - Login passed (HTTP 200)"
 
-          # Delete test user
+          # Cleanup - delete the test user to keep staging clean
+          echo "Cleaning up test data..."
           curl -s -b /tmp/cookies.txt \
             -X DELETE http://192.168.7.70/api/auth/delete \
             -H "Content-Type: application/json" > /dev/null
-          echo "✅ Cleanup done"
+          echo "✅ OK - Test user deleted"
 
-          echo "✅ All integration tests passed"
+          echo "---"
+          echo "✅ OK - All integration tests passed"
+          echo "Staging environment is healthy and ready for production promotion"

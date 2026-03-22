@@ -7,10 +7,15 @@
 # already built, tested, and validated in the Staging pipeline.
 #
 # Flow:
-#   promote-image (retag :staging → :prod-tag)
-#     └── manual approval
-#           └── deploy (Blue/Green + smoke tests + 10min monitor + rollback)
-#                 └── aws-update (if DR is active)
+#   promote-image
+#     └── lint
+#           └── test-jwt + test-auth + test-account (parallel)
+#                 └── approve (manual)
+#                       └── detect-environment
+#                             └── deploy-to-idle
+#                                   └── smoke-tests
+#                                         └── switch-monitor-rollback
+#                                               └── aws-update
 
 name: Deploy
 
@@ -81,18 +86,185 @@ jobs:
           echo "Note: ':latest' will only be applied after successful 10-minute health check"
 
   # ============================================================
-  # JOB 2 - Deploy to Production (Blue/Green Strategy)
-  # Requires manual approval before execution (GitHub Environment protection)
-  # Automatically detects the idle environment (Blue or Green)
-  # Deploys to idle, runs smoke tests, switches traffic, monitors 10 minutes
-  # If health checks fail 3 times consecutively - auto rollback to previous env
-  # If stable for 10 minutes - promotes image tag to ':latest' for AWS DR
+  # JOB 2 - Lint
+  # Runs ESLint static analysis on the codebase
+  # Catches syntax errors and code style issues before running tests
   # ============================================================
-  deploy:
-    name: Deploy to Production
-    runs-on: self-hosted
+  lint:
+    name: ESLint
+    runs-on: ubuntu-24.04
     needs: promote-image
+    defaults:
+      run:
+        working-directory: silver-bank
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install dependencies
+        run: |
+          echo "Installing Node.js dependencies..."
+          npm ci
+          echo "✅ OK - Dependencies installed"
+
+      - name: Run ESLint
+        run: |
+          echo "Running ESLint static analysis..."
+          npm run lint
+          echo "✅ OK - Lint passed"
+
+  # ============================================================
+  # JOB 3 - JWT Tests
+  # Validates JWT token generation, signing, and verification
+  # Runs in parallel with Auth and Account tests after lint passes
+  # ============================================================
+  test-jwt:
+    name: JWT Tests
+    runs-on: ubuntu-24.04
+    needs: lint
+    defaults:
+      run:
+        working-directory: silver-bank
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run JWT tests
+        run: |
+          echo "Running JWT unit tests..."
+          npx vitest run __tests__/jwt.test.ts
+          echo "✅ OK - JWT tests passed"
+
+  # ============================================================
+  # JOB 4 - Auth Tests
+  # Tests user authentication flows: login and registration
+  # Runs in parallel with JWT and Account tests after lint passes
+  # ============================================================
+  test-auth:
+    name: Auth Tests
+    runs-on: ubuntu-24.04
+    needs: lint
+    defaults:
+      run:
+        working-directory: silver-bank
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run auth tests
+        run: |
+          echo "Running authentication unit tests..."
+          npx vitest run __tests__/login.test.ts
+          npx vitest run __tests__/register.test.ts
+          echo "✅ OK - Auth tests passed"
+
+  # ============================================================
+  # JOB 5 - Account Tests
+  # Tests account management operations
+  # Runs in parallel with JWT and Auth tests after lint passes
+  # ============================================================
+  test-account:
+    name: Account Tests
+    runs-on: ubuntu-24.04
+    needs: lint
+    defaults:
+      run:
+        working-directory: silver-bank
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run account tests
+        run: |
+          echo "Running account management unit tests..."
+          npx vitest run __tests__/account.test.ts
+          echo "✅ OK - Account tests passed"
+
+  # ============================================================
+  # JOB 6 - Manual Approval Gate
+  # Requires a release manager to approve before production deploy
+  # This is the last checkpoint before touching production
+  # All tests must pass before approval is requested
+  # ============================================================
+  approve:
+    name: Manual Approval
+    runs-on: ubuntu-24.04
+    needs: [test-jwt, test-auth, test-account]
     environment: production
+    steps:
+      - name: Approval granted
+        run: |
+          echo "✅ OK - Manual approval granted"
+          echo "Release manager has approved production deployment"
+          echo "Proceeding with Blue/Green deployment..."
+
+  # ============================================================
+  # JOB 7 - Detect Active Environment
+  # Reads /opt/current-env on edge nginx to determine which
+  # environment (Blue or Green) is currently serving traffic
+  # The idle environment will receive the new deployment
+  # ============================================================
+  detect-environment:
+    name: Detect Active Environment
+    runs-on: self-hosted
+    needs: approve
+    outputs:
+      active_env: ${{ steps.detect.outputs.active_env }}
+      idle_env: ${{ steps.detect.outputs.idle_env }}
+    steps:
+      - name: Setup SSH key
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.PROXMOX_SSH_KEY }}" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          echo "StrictHostKeyChecking no" >> ~/.ssh/config
+
+      - name: Detect active environment
+        id: detect
+        run: |
+          echo "Reading active environment from edge nginx..."
+          ACTIVE=$(ssh devop@192.168.7.50 "cat /opt/current-env")
+          if [ "$ACTIVE" = "blue" ]; then
+            IDLE="green"
+          else
+            IDLE="blue"
+          fi
+          echo "active_env=${ACTIVE}" >> $GITHUB_OUTPUT
+          echo "idle_env=${IDLE}" >> $GITHUB_OUTPUT
+          echo "✅ OK - Active environment: ${ACTIVE}"
+          echo "✅ OK - Idle environment (deploy target): ${IDLE}"
+
+  # ============================================================
+  # JOB 8 - Deploy to Idle Environment
+  # Deploys the promoted production image to the idle environment
+  # Traffic is still flowing to the active environment at this point
+  # No user impact during this step
+  # ============================================================
+  deploy-to-idle:
+    name: Deploy to Idle Environment
+    runs-on: self-hosted
+    needs: [promote-image, detect-environment]
     steps:
       - name: Checkout infrastructure repo
         uses: actions/checkout@v4
@@ -109,7 +281,6 @@ jobs:
 
       - name: Setup SSH key
         run: |
-          echo "Configuring SSH access to production VMs..."
           mkdir -p ~/.ssh
           echo "${{ secrets.PROXMOX_SSH_KEY }}" > ~/.ssh/id_ed25519
           chmod 600 ~/.ssh/id_ed25519
@@ -118,48 +289,144 @@ jobs:
 
       - name: Setup Ansible vault password
         run: |
-          echo "Configuring Ansible Vault for secrets decryption..."
           echo "${{ secrets.VAULT_PASSWORD }}" > ~/.vault-password
           chmod 600 ~/.vault-password
           echo "✅ OK - Vault password configured"
 
-      - name: Deploy to production (Blue/Green)
+      - name: Deploy to idle environment
         run: |
-          echo "Starting Blue/Green deployment to production..."
+          echo "Deploying to idle environment: ${{ needs.detect-environment.outputs.idle_env }}"
           echo "Image tag: ${{ needs.promote-image.outputs.image_tag }}"
-          echo "---"
-          echo "Step 1 - Detecting active environment (Blue or Green)"
-          echo "Step 2 - Deploying to idle environment"
-          echo "Step 3 - Running smoke tests on idle environment"
-          echo "Step 4 - Switching nginx traffic to new environment"
-          echo "Step 5 - Monitoring for 10 minutes with auto-rollback"
-          echo "Step 6 - Promoting to ':latest' if stable"
-          echo "---"
+          echo "Active environment keeps serving traffic during this step..."
           cd proxmox-silverbank/ansible
-          ansible-playbook playbooks/deploy-production.yml \
+          ansible-playbook playbooks/deploy-idle.yml \
             -e "app_tag=${{ needs.promote-image.outputs.image_tag }}" \
+            -e "idle_env=${{ needs.detect-environment.outputs.idle_env }}" \
             -i inventory.ini
+          echo "✅ OK - Deployment to ${{ needs.detect-environment.outputs.idle_env }} complete"
+
+  # ============================================================
+  # JOB 9 - Smoke Tests
+  # Runs health checks directly on the idle environment
+  # Bypasses nginx - traffic still flows to active environment
+  # If smoke tests fail - deployment stops, no traffic switch occurs
+  # ============================================================
+  smoke-tests:
+    name: Smoke Tests
+    runs-on: self-hosted
+    needs: [promote-image, detect-environment, deploy-to-idle]
+    steps:
+      - name: Checkout infrastructure repo
+        uses: actions/checkout@v4
+        with:
+          repository: mariusiordan/DevOps-final-project
+          token: ${{ secrets.GHCR_TOKEN }}
+
+      - name: Install Ansible
+        run: |
+          pip install ansible --break-system-packages
+          echo "$HOME/.local/bin" >> $GITHUB_PATH
+
+      - name: Setup SSH key
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.PROXMOX_SSH_KEY }}" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          echo "StrictHostKeyChecking no" >> ~/.ssh/config
+
+      - name: Setup Ansible vault password
+        run: |
+          echo "${{ secrets.VAULT_PASSWORD }}" > ~/.vault-password
+          chmod 600 ~/.vault-password
+
+      - name: Run smoke tests on idle environment
+        run: |
+          echo "Running smoke tests on idle environment: ${{ needs.detect-environment.outputs.idle_env }}"
+          echo "Bypassing nginx - testing directly on idle VM..."
+          cd proxmox-silverbank/ansible
+          ansible-playbook playbooks/smoke-tests.yml \
+            -e "idle_env=${{ needs.detect-environment.outputs.idle_env }}" \
+            -i inventory.ini
+          echo "✅ OK - Smoke tests passed on ${{ needs.detect-environment.outputs.idle_env }}"
+
+  # ============================================================
+  # JOB 10 - Switch Traffic + Monitor + Rollback
+  # Switches nginx traffic to the new environment
+  # Monitors for 10 minutes - checks health every 30 seconds
+  # If 3 consecutive failures - auto rollback to previous environment
+  # If stable for 10 minutes - promotes image to ':latest' for AWS DR
+  # ============================================================
+  switch-monitor-rollback:
+    name: Switch Traffic + Monitor + Rollback
+    runs-on: self-hosted
+    needs: [promote-image, detect-environment, smoke-tests]
+    steps:
+      - name: Checkout infrastructure repo
+        uses: actions/checkout@v4
+        with:
+          repository: mariusiordan/DevOps-final-project
+          token: ${{ secrets.GHCR_TOKEN }}
+
+      - name: Install Ansible
+        run: |
+          pip install ansible --break-system-packages
+          echo "$HOME/.local/bin" >> $GITHUB_PATH
+
+      - name: Setup SSH key
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.PROXMOX_SSH_KEY }}" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          echo "StrictHostKeyChecking no" >> ~/.ssh/config
+
+      - name: Setup Ansible vault password
+        run: |
+          echo "${{ secrets.VAULT_PASSWORD }}" > ~/.vault-password
+          chmod 600 ~/.vault-password
+
+      - name: Switch nginx traffic
+        run: |
+          echo "Switching nginx traffic to: ${{ needs.detect-environment.outputs.idle_env }}"
+          echo "Previous active environment: ${{ needs.detect-environment.outputs.active_env }}"
+          cd proxmox-silverbank/ansible
+          ansible-playbook playbooks/switch-traffic.yml \
+            -e "idle_env=${{ needs.detect-environment.outputs.idle_env }}" \
+            -i inventory.ini
+          echo "✅ OK - Traffic switched to ${{ needs.detect-environment.outputs.idle_env }}"
+
+      - name: Monitor and auto-rollback if needed
+        run: |
+          echo "Monitoring production for 10 minutes..."
+          echo "Health check every 30 seconds"
+          echo "Auto-rollback after 3 consecutive failures"
+          cd proxmox-silverbank/ansible
+          ansible-playbook playbooks/rollback.yml \
+            -e "app_tag=${{ needs.promote-image.outputs.image_tag }}" \
+            -e "new_env=${{ needs.detect-environment.outputs.idle_env }}" \
+            -e "previous_env=${{ needs.detect-environment.outputs.active_env }}" \
+            -i inventory.ini
+          echo "✅ OK - Monitoring complete - deployment stable"
+          echo "✅ OK - Image promoted to ':latest'"
 
       - name: Production health check
         run: |
-          echo "Running final production health check..."
+          echo "Running final production health check via nginx..."
           sleep 15
           curl -f http://192.168.7.50/api/health || exit 1
           echo "✅ OK - Production is healthy"
           echo "✅ OK - Deployment complete"
 
   # ============================================================
-  # JOB 3 - Update AWS Disaster Recovery (if active)
-  # Checks if the AWS DR environment is running by probing the health endpoint
-  # If active - pulls ':latest' image (just promoted) and redeploys
-  # If not active - skips silently, no action required
+  # JOB 11 - Update AWS Disaster Recovery (if active)
+  # Checks if the AWS DR environment is running
+  # If active - pulls ':latest' image and redeploys
+  # If not active - skips silently
   # AWS IPs are read dynamically from Terraform state in S3
-  # This ensures the DR environment always mirrors production
   # ============================================================
   aws-update:
     name: Update AWS DR (if active)
     runs-on: self-hosted
-    needs: deploy
+    needs: switch-monitor-rollback
     steps:
       - name: Checkout infrastructure repo
         uses: actions/checkout@v4
@@ -182,7 +449,6 @@ jobs:
       - name: Install Ansible
         if: steps.aws_check.outputs.active == 'true'
         run: |
-          echo "Installing Ansible..."
           pip install ansible --break-system-packages
           echo "$HOME/.local/bin" >> $GITHUB_PATH
           echo "✅ OK - Ansible installed"
@@ -190,7 +456,6 @@ jobs:
       - name: Setup SSH key
         if: steps.aws_check.outputs.active == 'true'
         run: |
-          echo "Configuring SSH access to AWS VMs..."
           mkdir -p ~/.ssh
           echo "${{ secrets.PROXMOX_SSH_KEY }}" > ~/.ssh/id_ed25519
           chmod 600 ~/.ssh/id_ed25519
@@ -200,7 +465,6 @@ jobs:
       - name: Setup Ansible vault password
         if: steps.aws_check.outputs.active == 'true'
         run: |
-          echo "Configuring Ansible Vault..."
           echo "${{ secrets.VAULT_PASSWORD }}" > ~/.vault-password
           chmod 600 ~/.vault-password
           echo "✅ OK - Vault password configured"
@@ -213,12 +477,11 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region:            eu-west-2
 
-      - name: Install unzip and Setup Terraform
+      - name: Install unzip
         if: steps.aws_check.outputs.active == 'true'
         run: |
-          echo "Installing required tools..."
           sudo apt-get install -y unzip
-          echo "✅ OK - Tools installed"
+          echo "✅ OK - unzip installed"
 
       - name: Setup Terraform
         if: steps.aws_check.outputs.active == 'true'

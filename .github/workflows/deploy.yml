@@ -175,12 +175,13 @@ jobs:
       - name: Check if AWS DR is active
         id: aws_check
         run: |
-          if curl -sf --max-time 10 http://13.41.182.213/api/health > /dev/null 2>&1; then
+          EDGE_IP=$(curl -sf --max-time 10 https://api.ipify.org || echo "unknown")
+          if curl -sf --max-time 10 http://18.169.161.155/api/health > /dev/null 2>&1; then
             echo "active=true" >> $GITHUB_OUTPUT
-            echo "✅ AWS Disaster Recovery is active — updating to the latest configuration to ensure full failover readiness and consistency."
+            echo "✅ AWS DR is active - will update"
           else
             echo "active=false" >> $GITHUB_OUTPUT
-            echo "⏭️ AWS Disaster Recovery is not active — skipping update as no failover configuration is currently enabled."
+            echo "⏭️ AWS DR is not active - skipping"
           fi
 
       - name: Install Ansible
@@ -203,30 +204,53 @@ jobs:
           echo "${{ secrets.VAULT_PASSWORD }}" > ~/.vault-password
           chmod 600 ~/.vault-password
 
+      - name: Configure AWS credentials
+        if: steps.aws_check.outputs.active == 'true'
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id:     ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region:            eu-west-2
+
+      - name: Setup Terraform
+        if: steps.aws_check.outputs.active == 'true'
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_wrapper: false
+
+      - name: Get AWS IPs from Terraform state
+        if: steps.aws_check.outputs.active == 'true'
+        id: tf
+        working-directory: aws-silverbank/terraform
+        run: |
+          terraform init -reconfigure
+          echo "edge_ip=$(terraform output -raw edge_elastic_ip)" >> $GITHUB_OUTPUT
+          echo "blue_ip=$(terraform output -raw blue_private_ip)" >> $GITHUB_OUTPUT
+          echo "db_ip=$(terraform output -raw db_private_ip)" >> $GITHUB_OUTPUT
+
       - name: Generate AWS inventory
         if: steps.aws_check.outputs.active == 'true'
         run: |
-          mkdir -p aws-silverbank/ansible
-          cat > aws-silverbank/ansible/inventory-aws.ini << 'INI'
+          cat > aws-silverbank/ansible/inventory-aws.ini << EOF
           [edge]
-          edge-nginx ansible_host=13.41.182.213 ansible_user=ubuntu ansible_ssh_private_key_file=~/.ssh/id_ed25519 ansible_ssh_common_args='-o StrictHostKeyChecking=no'
+          edge-nginx ansible_host=${{ steps.tf.outputs.edge_ip }} ansible_user=ubuntu ansible_ssh_private_key_file=~/.ssh/id_ed25519 ansible_ssh_common_args='-o StrictHostKeyChecking=no'
 
           [prod]
-          prod-vm1-BLUE ansible_host=10.0.2.165
+          prod-vm1-BLUE ansible_host=${{ steps.tf.outputs.blue_ip }}
 
           [prod:vars]
           ansible_user=ubuntu
           ansible_ssh_private_key_file=~/.ssh/id_ed25519
-          ansible_ssh_common_args='-o StrictHostKeyChecking=no -o ProxyJump=ubuntu@13.41.182.213'
+          ansible_ssh_common_args='-o StrictHostKeyChecking=no -o ProxyJump=ubuntu@${{ steps.tf.outputs.edge_ip }}'
 
           [db]
-          db-postgresql ansible_host=10.0.2.194
+          db-postgresql ansible_host=${{ steps.tf.outputs.db_ip }}
 
           [db:vars]
           ansible_user=ubuntu
           ansible_ssh_private_key_file=~/.ssh/id_ed25519
-          ansible_ssh_common_args='-o StrictHostKeyChecking=no -o ProxyJump=ubuntu@13.41.182.213'
-          INI
+          ansible_ssh_common_args='-o StrictHostKeyChecking=no -o ProxyJump=ubuntu@${{ steps.tf.outputs.edge_ip }}'
+          EOF
 
       - name: Update app on AWS DR
         if: steps.aws_check.outputs.active == 'true'
@@ -241,5 +265,5 @@ jobs:
         if: steps.aws_check.outputs.active == 'true'
         run: |
           sleep 30
-          curl -f http://13.41.182.213/api/health || exit 1
-          echo "✅ AWS Disaster Recovery configuration updated successfully — failover and recovery procedures are now aligned with the latest infrastructure state."
+          curl -f http://${{ steps.tf.outputs.edge_ip }}/api/health || exit 1
+          echo "✅ AWS DR updated successfully"

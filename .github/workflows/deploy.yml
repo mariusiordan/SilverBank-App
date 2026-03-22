@@ -2,11 +2,15 @@
 # Trigger: push to main branch
 #
 # Pipeline 3 - Production Deployment (Blue/Green Strategy)
+#
+# This pipeline does NOT rebuild images - it promotes the image
+# already built, tested, and validated in the Staging pipeline.
+#
 # Flow:
-#   lint
-#     ├── test-jwt      ┐
-#     ├── test-auth     ├── build-images → push-images → manual approval → deploy → aws-update
-#     └── test-account  ┘
+#   promote-image (retag :staging → :prod-tag)
+#     └── manual approval
+#           └── deploy (Blue/Green + smoke tests + 10min monitor + rollback)
+#                 └── aws-update (if DR is active)
 
 name: Deploy
 
@@ -17,131 +21,14 @@ on:
 
 jobs:
   # ============================================================
-  # JOB 1 - Lint
-  # Runs ESLint static analysis on the codebase
-  # Catches syntax errors and code style issues before running tests
+  # JOB 1 - Promote Staging Image to Production
+  # The image was already built and tested in the Staging pipeline
+  # This job retags the validated ':staging' image with a production tag
+  # No rebuild occurs - we deploy exactly what was tested on staging
   # ============================================================
-  lint:
-    name: ESLint
+  promote-image:
+    name: Promote Staging Image to Production
     runs-on: ubuntu-24.04
-    defaults:
-      run:
-        working-directory: silver-bank
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-
-      - name: Install dependencies
-        run: |
-          echo "Installing Node.js dependencies..."
-          npm ci
-          echo "OK - Dependencies installed"
-
-      - name: Run ESLint
-        run: |
-          echo "Running ESLint static analysis..."
-          npm run lint
-          echo "OK - Lint passed"
-
-  # ============================================================
-  # JOB 2 - JWT Tests
-  # Validates JWT token generation, signing, and verification
-  # Runs in parallel with Auth and Account tests after lint passes
-  # ============================================================
-  test-jwt:
-    name: JWT Tests
-    runs-on: ubuntu-24.04
-    needs: lint
-    defaults:
-      run:
-        working-directory: silver-bank
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Run JWT tests
-        run: |
-          echo "Running JWT unit tests..."
-          npx vitest run __tests__/jwt.test.ts
-          echo "OK - JWT tests passed"
-
-  # ============================================================
-  # JOB 3 - Auth Tests
-  # Tests user authentication flows: login and registration
-  # Runs in parallel with JWT and Account tests after lint passes
-  # ============================================================
-  test-auth:
-    name: Auth Tests
-    runs-on: ubuntu-24.04
-    needs: lint
-    defaults:
-      run:
-        working-directory: silver-bank
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Run auth tests
-        run: |
-          echo "Running authentication unit tests..."
-          npx vitest run __tests__/login.test.ts
-          npx vitest run __tests__/register.test.ts
-          echo "OK - Auth tests passed"
-
-  # ============================================================
-  # JOB 4 - Account Tests
-  # Tests account management operations
-  # Runs in parallel with JWT and Auth tests after lint passes
-  # ============================================================
-  test-account:
-    name: Account Tests
-    runs-on: ubuntu-24.04
-    needs: lint
-    defaults:
-      run:
-        working-directory: silver-bank
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Run account tests
-        run: |
-          echo "Running account management unit tests..."
-          npx vitest run __tests__/account.test.ts
-          echo "OK - Account tests passed"
-
-  # ============================================================
-  # JOB 5 - Build Docker Images
-  # Builds frontend (Next.js) and backend (Express.js) Docker images
-  # Only runs after all three test suites pass
-  # Uses multi-stage Dockerfiles to produce optimized production images
-  # Images are built but NOT pushed yet - push happens in the next job
-  # ============================================================
-  build-images:
-    name: Build Docker Images
-    runs-on: ubuntu-24.04
-    needs: [test-jwt, test-auth, test-account]
     permissions:
       contents: read
       packages: write
@@ -150,7 +37,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Generate image tag
+      - name: Generate production image tag
         id: tag
         run: |
           VERSION="v1.0"
@@ -158,110 +45,43 @@ jobs:
           SHA=$(git rev-parse --short HEAD)
           TAG="${VERSION}-prod-${DATE}-sha-${SHA}"
           echo "tag=${TAG}" >> $GITHUB_OUTPUT
-          echo "Image tag: ${TAG}"
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Build frontend image
-        run: |
-          echo "Building frontend Docker image (Next.js)..."
-          echo "This step compiles the React application into a production-ready image"
-
-      - uses: docker/build-push-action@v5
-        with:
-          context: ./silver-bank
-          file: ./silver-bank/Dockerfile
-          platforms: linux/amd64
-          push: false
-          tags: |
-            ghcr.io/mariusiordan/silverbank-frontend:${{ steps.tag.outputs.tag }}
-
-      - name: Build backend image
-        run: |
-          echo "Building backend Docker image (Express.js + Prisma)..."
-          echo "This step compiles TypeScript and creates a production-ready API image"
-
-      - uses: docker/build-push-action@v5
-        with:
-          context: ./silver-bank/backend
-          file: ./silver-bank/backend/Dockerfile
-          platforms: linux/amd64
-          push: false
-          tags: |
-            ghcr.io/mariusiordan/silverbank-backend:${{ steps.tag.outputs.tag }}
-
-      - name: Build summary
-        run: |
-          echo "OK - Both Docker images built successfully"
-          echo "Frontend image: ghcr.io/mariusiordan/silverbank-frontend:${{ steps.tag.outputs.tag }}"
-          echo "Backend image:  ghcr.io/mariusiordan/silverbank-backend:${{ steps.tag.outputs.tag }}"
-
-  # ============================================================
-  # JOB 6 - Push Docker Images to Registry
-  # Pushes the built images to GitHub Container Registry (ghcr.io)
-  # Images are tagged with a unique build identifier for traceability
-  # The ':latest' tag is NOT applied here - it is only promoted after
-  # a successful production deployment and 10-minute health check window
-  # ============================================================
-  push-images:
-    name: Push Images to Registry
-    runs-on: ubuntu-24.04
-    needs: build-images
-    permissions:
-      contents: read
-      packages: write
-    outputs:
-      image_tag: ${{ needs.build-images.outputs.image_tag }}
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+          echo "Production tag: ${TAG}"
 
       - name: Login to GitHub Container Registry
         run: |
-          echo "Authenticating with GitHub Container Registry (ghcr.io)..."
+          echo "Authenticating with GitHub Container Registry..."
           echo "${{ secrets.GHCR_TOKEN }}" | docker login ghcr.io -u mariusiordan --password-stdin
-          echo "OK - Authentication successful"
+          echo "✅ OK - Authentication successful"
 
-      - name: Push frontend image
+      - name: Promote frontend image from staging to production
         run: |
-          echo "Pushing frontend image to registry..."
-          echo "Tag: ${{ needs.build-images.outputs.image_tag }}"
+          echo "Promoting frontend image..."
+          echo "Source: ghcr.io/mariusiordan/silverbank-frontend:staging"
+          echo "Target: ghcr.io/mariusiordan/silverbank-frontend:${{ steps.tag.outputs.tag }}"
+          docker buildx imagetools create \
+            -t ghcr.io/mariusiordan/silverbank-frontend:${{ steps.tag.outputs.tag }} \
+            ghcr.io/mariusiordan/silverbank-frontend:staging
+          echo "✅ OK - Frontend image promoted"
 
-      - uses: docker/build-push-action@v5
-        with:
-          context: ./silver-bank
-          file: ./silver-bank/Dockerfile
-          platforms: linux/amd64
-          push: true
-          tags: |
-            ghcr.io/mariusiordan/silverbank-frontend:${{ needs.build-images.outputs.image_tag }}
-
-      - name: Push backend image
+      - name: Promote backend image from staging to production
         run: |
-          echo "Pushing backend image to registry..."
-          echo "Tag: ${{ needs.build-images.outputs.image_tag }}"
+          echo "Promoting backend image..."
+          echo "Source: ghcr.io/mariusiordan/silverbank-backend:staging"
+          echo "Target: ghcr.io/mariusiordan/silverbank-backend:${{ steps.tag.outputs.tag }}"
+          docker buildx imagetools create \
+            -t ghcr.io/mariusiordan/silverbank-backend:${{ steps.tag.outputs.tag }} \
+            ghcr.io/mariusiordan/silverbank-backend:staging
+          echo "✅ OK - Backend image promoted"
 
-      - uses: docker/build-push-action@v5
-        with:
-          context: ./silver-bank/backend
-          file: ./silver-bank/backend/Dockerfile
-          platforms: linux/amd64
-          push: true
-          tags: |
-            ghcr.io/mariusiordan/silverbank-backend:${{ needs.build-images.outputs.image_tag }}
-
-      - name: Push summary
+      - name: Promotion summary
         run: |
-          echo "OK - Both images pushed to GitHub Container Registry"
-          echo "Frontend: ghcr.io/mariusiordan/silverbank-frontend:${{ needs.build-images.outputs.image_tag }}"
-          echo "Backend:  ghcr.io/mariusiordan/silverbank-backend:${{ needs.build-images.outputs.image_tag }}"
-          echo "Note: ':latest' tag will only be applied after successful production deployment"
+          echo "✅ OK - Images promoted from staging to production"
+          echo "Frontend: ghcr.io/mariusiordan/silverbank-frontend:${{ steps.tag.outputs.tag }}"
+          echo "Backend:  ghcr.io/mariusiordan/silverbank-backend:${{ steps.tag.outputs.tag }}"
+          echo "Note: ':latest' will only be applied after successful 10-minute health check"
 
   # ============================================================
-  # JOB 7 - Deploy to Production (Blue/Green Strategy)
+  # JOB 2 - Deploy to Production (Blue/Green Strategy)
   # Requires manual approval before execution (GitHub Environment protection)
   # Automatically detects the idle environment (Blue or Green)
   # Deploys to idle, runs smoke tests, switches traffic, monitors 10 minutes
@@ -271,7 +91,7 @@ jobs:
   deploy:
     name: Deploy to Production
     runs-on: self-hosted
-    needs: push-images
+    needs: promote-image
     environment: production
     steps:
       - name: Checkout infrastructure repo
@@ -285,7 +105,7 @@ jobs:
           echo "Installing Ansible..."
           pip install ansible --break-system-packages
           echo "$HOME/.local/bin" >> $GITHUB_PATH
-          echo "OK - Ansible installed"
+          echo "✅ OK - Ansible installed"
 
       - name: Setup SSH key
         run: |
@@ -294,28 +114,30 @@ jobs:
           echo "${{ secrets.PROXMOX_SSH_KEY }}" > ~/.ssh/id_ed25519
           chmod 600 ~/.ssh/id_ed25519
           echo "StrictHostKeyChecking no" >> ~/.ssh/config
-          echo "OK - SSH configured"
+          echo "✅ OK - SSH configured"
 
       - name: Setup Ansible vault password
         run: |
           echo "Configuring Ansible Vault for secrets decryption..."
           echo "${{ secrets.VAULT_PASSWORD }}" > ~/.vault-password
           chmod 600 ~/.vault-password
-          echo "OK - Vault password configured"
+          echo "✅ OK - Vault password configured"
 
       - name: Deploy to production (Blue/Green)
         run: |
           echo "Starting Blue/Green deployment to production..."
-          echo "Image tag: ${{ needs.push-images.outputs.image_tag }}"
+          echo "Image tag: ${{ needs.promote-image.outputs.image_tag }}"
+          echo "---"
           echo "Step 1 - Detecting active environment (Blue or Green)"
           echo "Step 2 - Deploying to idle environment"
           echo "Step 3 - Running smoke tests on idle environment"
           echo "Step 4 - Switching nginx traffic to new environment"
           echo "Step 5 - Monitoring for 10 minutes with auto-rollback"
           echo "Step 6 - Promoting to ':latest' if stable"
+          echo "---"
           cd proxmox-silverbank/ansible
           ansible-playbook playbooks/deploy-production.yml \
-            -e "app_tag=${{ needs.push-images.outputs.image_tag }}" \
+            -e "app_tag=${{ needs.promote-image.outputs.image_tag }}" \
             -i inventory.ini
 
       - name: Production health check
@@ -323,11 +145,11 @@ jobs:
           echo "Running final production health check..."
           sleep 15
           curl -f http://192.168.7.50/api/health || exit 1
-          echo "OK - Production is healthy"
-          echo "OK - Deployment complete"
+          echo "✅ OK - Production is healthy"
+          echo "✅ OK - Deployment complete"
 
   # ============================================================
-  # JOB 8 - Update AWS Disaster Recovery (if active)
+  # JOB 3 - Update AWS Disaster Recovery (if active)
   # Checks if the AWS DR environment is running by probing the health endpoint
   # If active - pulls ':latest' image (just promoted) and redeploys
   # If not active - skips silently, no action required
@@ -391,6 +213,13 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region:            eu-west-2
 
+      - name: Install unzip and Setup Terraform
+        if: steps.aws_check.outputs.active == 'true'
+        run: |
+          echo "Installing required tools..."
+          sudo apt-get install -y unzip
+          echo "✅ OK - Tools installed"
+
       - name: Setup Terraform
         if: steps.aws_check.outputs.active == 'true'
         uses: hashicorp/setup-terraform@v3
@@ -440,7 +269,7 @@ jobs:
         working-directory: aws-silverbank/ansible
         run: |
           echo "Deploying ':latest' image to AWS DR environment..."
-          echo "This image was just promoted after a successful 10-minute monitoring window on Proxmox"
+          echo "This image was just promoted after a successful 10-minute monitoring window"
           ansible-playbook playbooks/deploy-production.yml \
             -i inventory-aws.ini \
             -e "app_tag=latest" \
@@ -452,5 +281,5 @@ jobs:
           echo "Running health check on AWS DR environment..."
           sleep 30
           curl -f http://${{ steps.tf.outputs.edge_ip }}/api/health || exit 1
-          echo "✅OK - AWS DR updated and healthy"
+          echo "✅ OK - AWS DR updated and healthy"
           echo "✅ OK - Production and DR environments are now in sync"

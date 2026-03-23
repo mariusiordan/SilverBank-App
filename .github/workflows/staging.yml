@@ -152,6 +152,11 @@ jobs:
       - name: Generate image tag
         id: tag
         run: |
+          # Application version — increment this manually for each release
+          # Format: vMAJOR.MINOR (e.g. v1.0, v1.1, v2.0)
+          # MAJOR — breaking changes or major new features
+          # MINOR — new features, bug fixes, improvements
+          # This version will appear in /api/health as 'image_tag'
           VERSION="v1.0"
           DATE=$(date +%Y-%m-%d)
           SHA=$(git rev-parse --short HEAD)

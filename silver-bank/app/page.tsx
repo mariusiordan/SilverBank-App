@@ -578,3 +578,4 @@ useEffect(() => {
     </>
   );
 }
+echo "var x = 1"

@@ -14,7 +14,7 @@
 #                 └── deploy-to-idle
 #                       └── smoke-tests
 #                             └── switch-monitor-rollback
-#                                   └── aws-update
+#                                   └── aws-update (suspended - activate manually for DR demo)
 
 name: Deploy
 
@@ -41,19 +41,28 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # deploy.yml - Generate production image tag
       - name: Generate production image tag
         id: tag
         run: |
           # Application version — must match the version set in staging.yml
-          # Increment this together with staging.yml when releasing a new version
-          # This tag is applied to the image promoted from ':staging' to production
+          # Always update both files together when releasing a new version
+          #
+          # This tag is applied when promoting the ':staging' image to production
+          # The same image built in staging.yml is retagged here — no rebuild occurs
           # After a successful 10-minute health check, this tag is promoted to ':latest'
           VERSION="v1.0"
-          DATE=$(date +%Y-%m-%d)
+
+          # Git SHA — links this deployment directly to the source commit
+          # Allows instant traceability: image tag → git commit → code changes
           SHA=$(git rev-parse --short HEAD)
-          TAG="${VERSION}-prod-${DATE}-sha-${SHA}"
+
+          # Final tag format: v{MAJOR}.{MINOR}-sha-{git-sha}
+          # Example: v1.0-sha-abc1234
+          TAG="${VERSION}-sha-${SHA}"
+
           echo "tag=${TAG}" >> $GITHUB_OUTPUT
-          echo "Production tag: ${TAG}"
+          echo "Production tag: ${TAG}"       
 
       - name: Login to GitHub Container Registry
         run: |
@@ -309,122 +318,142 @@ jobs:
   # If not active - skips silently
   # AWS IPs are read dynamically from Terraform state in S3
   # ============================================================
-  aws-update:
-    name: Update AWS DR (if active)
-    runs-on: self-hosted
-    needs: switch-monitor-rollback
-    steps:
-      - name: Checkout infrastructure repo
-        uses: actions/checkout@v4
-        with:
-          repository: mariusiordan/DevOps-final-project
-          token: ${{ secrets.GHCR_TOKEN }}
+  # ============================================================
+  # JOB 7 - Update AWS Disaster Recovery (suspended)
+  # Automatically updates AWS DR environment after every successful
+  # production deployment when AWS infrastructure is active.
+  #
+  # Suspended reason: AWS DR is activated manually for demo/DR purposes only.
+  # Cost optimization — NAT Gateway costs ~$33/month when running.
+  #
+  # To re-enable:
+  #   1. Uncomment this job
+  #   2. Ensure AWS infrastructure is provisioned (terraform apply)
+  #   3. Ensure GitHub secrets are set: AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY
+  #
+  # Flow when active:
+  #   - Reads edge IP dynamically from Terraform state in S3
+  #   - Checks if AWS DR is responding on /api/health
+  #   - If active → pulls ':latest' image and redeploys via Ansible
+  #   - If not active → skips silently, no action required
+  # ============================================================
 
-      - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          aws-access-key-id:     ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region:            eu-west-2
-
-      - name: Install unzip
-        run: |
-          sudo apt-get install -y unzip
-          echo "✅ OK - unzip installed"
-
-      - name: Setup Terraform
-        uses: hashicorp/setup-terraform@v3
-        with:
-          terraform_wrapper: false
-
-      - name: Get AWS IPs from Terraform state
-        id: tf
-        working-directory: aws-silverbank/terraform
-        run: |
-          echo "Reading infrastructure IPs from Terraform state in S3..."
-          terraform init -reconfigure
-          echo "edge_ip=$(terraform output -raw edge_elastic_ip)" >> $GITHUB_OUTPUT
-          echo "blue_ip=$(terraform output -raw blue_private_ip)" >> $GITHUB_OUTPUT
-          echo "db_ip=$(terraform output -raw db_private_ip)" >> $GITHUB_OUTPUT
-          echo "✅ OK - IPs retrieved from Terraform state"
-
-      - name: Check if AWS DR is active
-        id: aws_check
-        run: |
-          echo "Checking if AWS Disaster Recovery environment is active..."
-          if curl -sf --max-time 10 http://${{ steps.tf.outputs.edge_ip }}/api/health > /dev/null 2>&1; then
-            echo "active=true" >> $GITHUB_OUTPUT
-            echo "✅ OK - AWS DR is active - update will proceed"
-          else
-            echo "active=false" >> $GITHUB_OUTPUT
-            echo "INFO - AWS DR is not active - skipping update"
-          fi
-
-      - name: Install Ansible
-        if: steps.aws_check.outputs.active == 'true'
-        run: |
-          pip install ansible --break-system-packages
-          echo "$HOME/.local/bin" >> $GITHUB_PATH
-          echo "✅ OK - Ansible installed"
-
-      - name: Setup SSH key
-        if: steps.aws_check.outputs.active == 'true'
-        run: |
-          mkdir -p ~/.ssh
-          echo "${{ secrets.PROXMOX_SSH_KEY }}" > ~/.ssh/id_ed25519
-          chmod 600 ~/.ssh/id_ed25519
-          echo "StrictHostKeyChecking no" >> ~/.ssh/config
-          echo "✅ OK - SSH configured"
-
-      - name: Setup Ansible vault password
-        if: steps.aws_check.outputs.active == 'true'
-        run: |
-          echo "${{ secrets.VAULT_PASSWORD }}" > ~/.vault-password
-          chmod 600 ~/.vault-password
-          echo "✅ OK - Vault password configured"
-
-      - name: Generate AWS inventory
-        if: steps.aws_check.outputs.active == 'true'
-        run: |
-          echo "Generating Ansible inventory from Terraform outputs..."
-          cat > aws-silverbank/ansible/inventory-aws.ini << EOF
-          [edge]
-          edge-nginx ansible_host=${{ steps.tf.outputs.edge_ip }} ansible_user=ubuntu ansible_ssh_private_key_file=~/.ssh/id_ed25519 ansible_ssh_common_args='-o StrictHostKeyChecking=no'
-
-          [prod]
-          prod-vm1-BLUE ansible_host=${{ steps.tf.outputs.blue_ip }}
-
-          [prod:vars]
-          ansible_user=ubuntu
-          ansible_ssh_private_key_file=~/.ssh/id_ed25519
-          ansible_ssh_common_args='-o StrictHostKeyChecking=no -o ProxyJump=ubuntu@${{ steps.tf.outputs.edge_ip }}'
-
-          [db]
-          db-postgresql ansible_host=${{ steps.tf.outputs.db_ip }}
-
-          [db:vars]
-          ansible_user=ubuntu
-          ansible_ssh_private_key_file=~/.ssh/id_ed25519
-          ansible_ssh_common_args='-o StrictHostKeyChecking=no -o ProxyJump=ubuntu@${{ steps.tf.outputs.edge_ip }}'
-          EOF
-          echo "✅ OK - Inventory generated"
-
-      - name: Update app on AWS DR
-        if: steps.aws_check.outputs.active == 'true'
-        working-directory: aws-silverbank/ansible
-        run: |
-          echo "Deploying ':latest' image to AWS DR environment..."
-          echo "This image was just promoted after a successful monitoring window"
-          ansible-playbook playbooks/deploy-production.yml \
-            -i inventory-aws.ini \
-            -e "app_tag=latest" \
-            --vault-password-file ~/.vault-password
-
-      - name: Health check AWS DR
-        if: steps.aws_check.outputs.active == 'true'
-        run: |
-          echo "Running health check on AWS DR environment..."
-          sleep 30
-          curl -f http://${{ steps.tf.outputs.edge_ip }}/api/health || exit 1
-          echo "✅ OK - AWS DR updated and healthy"
-          echo "✅ OK - Production and DR environments are now in sync"
+  # aws-update:
+  #   name: Update AWS DR (if active)
+  #   runs-on: self-hosted
+  #   needs: switch-monitor-rollback
+  #   steps:
+  #     - name: Checkout infrastructure repo
+  #       uses: actions/checkout@v4
+  #       with:
+  #         repository: mariusiordan/DevOps-final-project
+  #         token: ${{ secrets.GHCR_TOKEN }}
+  #
+  #     - name: Configure AWS credentials
+  #       uses: aws-actions/configure-aws-credentials@v4
+  #       with:
+  #         aws-access-key-id:     ${{ secrets.AWS_ACCESS_KEY_ID }}
+  #         aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+  #         aws-region:            eu-west-2
+  #
+  #     - name: Install unzip
+  #       run: |
+  #         sudo apt-get install -y unzip
+  #         echo "✅ OK - unzip installed"
+  #
+  #     - name: Setup Terraform
+  #       uses: hashicorp/setup-terraform@v3
+  #       with:
+  #         terraform_wrapper: false
+  #
+  #     - name: Get AWS IPs from Terraform state
+  #       id: tf
+  #       working-directory: aws-silverbank/terraform
+  #       run: |
+  #         echo "Reading infrastructure IPs from Terraform state in S3..."
+  #         terraform init -reconfigure
+  #         echo "edge_ip=$(terraform output -raw edge_elastic_ip)" >> $GITHUB_OUTPUT
+  #         echo "blue_ip=$(terraform output -raw blue_private_ip)" >> $GITHUB_OUTPUT
+  #         echo "db_ip=$(terraform output -raw db_private_ip)" >> $GITHUB_OUTPUT
+  #         echo "✅ OK - IPs retrieved from Terraform state"
+  #
+  #     - name: Check if AWS DR is active
+  #       id: aws_check
+  #       run: |
+  #         echo "Checking if AWS Disaster Recovery environment is active..."
+  #         if curl -sf --max-time 10 http://${{ steps.tf.outputs.edge_ip }}/api/health > /dev/null 2>&1; then
+  #           echo "active=true" >> $GITHUB_OUTPUT
+  #           echo "✅ OK - AWS DR is active - update will proceed"
+  #         else
+  #           echo "active=false" >> $GITHUB_OUTPUT
+  #           echo "INFO - AWS DR is not active - skipping update"
+  #         fi
+  #
+  #     - name: Install Ansible
+  #       if: steps.aws_check.outputs.active == 'true'
+  #       run: |
+  #         pip install ansible --break-system-packages
+  #         echo "$HOME/.local/bin" >> $GITHUB_PATH
+  #         echo "✅ OK - Ansible installed"
+  #
+  #     - name: Setup SSH key
+  #       if: steps.aws_check.outputs.active == 'true'
+  #       run: |
+  #         mkdir -p ~/.ssh
+  #         echo "${{ secrets.PROXMOX_SSH_KEY }}" > ~/.ssh/id_ed25519
+  #         chmod 600 ~/.ssh/id_ed25519
+  #         echo "StrictHostKeyChecking no" >> ~/.ssh/config
+  #         echo "✅ OK - SSH configured"
+  #
+  #     - name: Setup Ansible vault password
+  #       if: steps.aws_check.outputs.active == 'true'
+  #       run: |
+  #         echo "${{ secrets.VAULT_PASSWORD }}" > ~/.vault-password
+  #         chmod 600 ~/.vault-password
+  #         echo "✅ OK - Vault password configured"
+  #
+  #     - name: Generate AWS inventory
+  #       if: steps.aws_check.outputs.active == 'true'
+  #       run: |
+  #         echo "Generating Ansible inventory from Terraform outputs..."
+  #         cat > aws-silverbank/ansible/inventory-aws.ini << EOF
+  #         [edge]
+  #         edge-nginx ansible_host=${{ steps.tf.outputs.edge_ip }} ansible_user=ubuntu ansible_ssh_private_key_file=~/.ssh/id_ed25519 ansible_ssh_common_args='-o StrictHostKeyChecking=no'
+  #
+  #         [prod]
+  #         prod-vm1-BLUE ansible_host=${{ steps.tf.outputs.blue_ip }}
+  #
+  #         [prod:vars]
+  #         ansible_user=ubuntu
+  #         ansible_ssh_private_key_file=~/.ssh/id_ed25519
+  #         ansible_ssh_common_args='-o StrictHostKeyChecking=no -o ProxyJump=ubuntu@${{ steps.tf.outputs.edge_ip }}'
+  #
+  #         [db]
+  #         db-postgresql ansible_host=${{ steps.tf.outputs.db_ip }}
+  #
+  #         [db:vars]
+  #         ansible_user=ubuntu
+  #         ansible_ssh_private_key_file=~/.ssh/id_ed25519
+  #         ansible_ssh_common_args='-o StrictHostKeyChecking=no -o ProxyJump=ubuntu@${{ steps.tf.outputs.edge_ip }}'
+  #         EOF
+  #         echo "✅ OK - Inventory generated"
+  #
+  #     - name: Update app on AWS DR
+  #       if: steps.aws_check.outputs.active == 'true'
+  #       working-directory: aws-silverbank/ansible
+  #       run: |
+  #         echo "Deploying ':latest' image to AWS DR environment..."
+  #         echo "This image was just promoted after a successful monitoring window"
+  #         ansible-playbook playbooks/deploy-production.yml \
+  #           -i inventory-aws.ini \
+  #           -e "app_tag=latest" \
+  #           --vault-password-file ~/.vault-password
+  #
+  #     - name: Health check AWS DR
+  #       if: steps.aws_check.outputs.active == 'true'
+  #       run: |
+  #         echo "Running health check on AWS DR environment..."
+  #         sleep 30
+  #         curl -f http://${{ steps.tf.outputs.edge_ip }}/api/health || exit 1
+  #         echo "✅ OK - AWS DR updated and healthy"
+  #         echo "✅ OK - Production and DR environments are now in sync"

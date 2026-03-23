@@ -578,5 +578,3 @@ useEffect(() => {
     </>
   );
 }
-echo "var x = 1"
-echo "var x = 1"

@@ -139,7 +139,7 @@ jobs:
         id: detect
         run: |
           echo "Reading active environment from edge nginx..."
-          ACTIVE=$(ssh devop@192.168.7.50 "cat /opt/current-env")
+          ACTIVE=$(ssh devop@192.168.7.50 "cat /opt/current-env 2>/dev/null || echo 'green'")
           if [ "$ACTIVE" = "blue" ]; then
             IDLE="green"
           else

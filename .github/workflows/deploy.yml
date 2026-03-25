@@ -174,9 +174,16 @@ jobs:
           aws-access-key-id:     ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region:            eu-west-2
-
+      - name: Install AWS CLI
+        run: |
+          curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o /tmp/awscliv2.zip
+          unzip -q /tmp/awscliv2.zip -d /tmp
+          sudo /tmp/aws/install --update
+          echo "/usr/local/bin" >> $GITHUB_PATH
+          echo "✅ OK - AWS CLI installed"
       - name: pg_dump and upload to S3
         run: |
+          export PATH="/usr/local/bin:$PATH"
           TIMESTAMP=$(date +%Y%m%d_%H%M%S)
           TAG="${{ needs.promote-image.outputs.image_tag }}"
           BACKUP_FILE="backup_${TIMESTAMP}_${TAG}.sql"
@@ -195,7 +202,7 @@ jobs:
           echo "✅ OK - Backup copied to runner"
 
           # Upload la S3
-          aws s3 cp /tmp/${BACKUP_FILE} \
+          /usr/local/bin/aws s3 cp /tmp/${BACKUP_FILE} \
             s3://silverbank-tfstate-mariusiordan/db-backups/${BACKUP_FILE}
           echo "✅ OK - Backup uploaded to S3"
           echo "Location: s3://silverbank-tfstate-mariusiordan/db-backups/${BACKUP_FILE}"
@@ -389,9 +396,24 @@ jobs:
             echo "stable=false" >> $GITHUB_OUTPUT
             echo "❌ Monitoring failed - rollback needed"
           fi
-
   # ============================================================
-  # JOB 9 - Rollback
+  # JOB 9 - Production Health Check
+  # Runs only if monitor detects stability (stable=true)
+  # ============================================================
+  production-health-check:
+    name: Production Health Check
+    runs-on: self-hosted
+    needs: monitor
+    if: needs.monitor.outputs.stable == 'true'
+    steps:
+      - name: Final health check
+        run: |
+          sleep 10
+          curl -f http://192.168.7.50/api/health || exit 1
+          echo "✅ OK - Production is healthy"
+          echo "✅ OK - Deployment complete"
+  # ============================================================
+  # JOB 10 - Rollback
   # Runs only if monitor detects instability (stable=false)
   # Switches nginx back to the previous environment
   # Verifies rollback success with a health check
@@ -428,22 +450,7 @@ jobs:
           echo "❌ :latest was NOT updated"
           exit 1
 
-  # ============================================================
-  # JOB 10 - Production Health Check
-  # Runs only if monitor detects stability (stable=true)
-  # ============================================================
-  production-health-check:
-    name: Production Health Check
-    runs-on: self-hosted
-    needs: monitor
-    if: needs.monitor.outputs.stable == 'true'
-    steps:
-      - name: Final health check
-        run: |
-          sleep 10
-          curl -f http://192.168.7.50/api/health || exit 1
-          echo "✅ OK - Production is healthy"
-          echo "✅ OK - Deployment complete"
+ 
 
   # ============================================================
   # JOB 7 - Update AWS Disaster Recovery (if active) - suspended

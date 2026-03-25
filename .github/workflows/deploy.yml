@@ -174,16 +174,9 @@ jobs:
           aws-access-key-id:     ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region:            eu-west-2
-      - name: Install AWS CLI
-        run: |
-          curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o /tmp/awscliv2.zip
-          unzip -q /tmp/awscliv2.zip -d /tmp
-          sudo /tmp/aws/install --update
-          echo "/usr/local/bin" >> $GITHUB_PATH
-          echo "✅ OK - AWS CLI installed"
+
       - name: pg_dump and upload to S3
         run: |
-          export PATH="/usr/local/bin:$PATH"
           TIMESTAMP=$(date +%Y%m%d_%H%M%S)
           TAG="${{ needs.promote-image.outputs.image_tag }}"
           BACKUP_FILE="backup_${TIMESTAMP}_${TAG}.sql"
@@ -192,22 +185,18 @@ jobs:
           echo "Tag: ${TAG}"
           echo "File: ${BACKUP_FILE}"
 
-          # Dump pe DB VM
           ssh devop@192.168.7.60 \
             "docker exec postgres pg_dump -U devop_db appdb > /tmp/${BACKUP_FILE}"
           echo "✅ OK - pg_dump complete"
 
-          # Copiaza pe runner
           scp devop@192.168.7.60:/tmp/${BACKUP_FILE} /tmp/${BACKUP_FILE}
           echo "✅ OK - Backup copied to runner"
 
-          # Upload la S3
           /usr/local/bin/aws s3 cp /tmp/${BACKUP_FILE} \
             s3://silverbank-tfstate-mariusiordan/db-backups/${BACKUP_FILE}
           echo "✅ OK - Backup uploaded to S3"
           echo "Location: s3://silverbank-tfstate-mariusiordan/db-backups/${BACKUP_FILE}"
 
-          # Cleanup
           ssh devop@192.168.7.60 "rm /tmp/${BACKUP_FILE}"
           rm /tmp/${BACKUP_FILE}
           echo "✅ OK - Cleanup complete"

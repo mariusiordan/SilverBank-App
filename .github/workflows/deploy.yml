@@ -396,9 +396,24 @@ jobs:
             echo "stable=false" >> $GITHUB_OUTPUT
             echo "❌ Monitoring failed - rollback needed"
           fi
-
   # ============================================================
-  # JOB 9 - Rollback
+  # JOB 9 - Production Health Check
+  # Runs only if monitor detects stability (stable=true)
+  # ============================================================
+  production-health-check:
+    name: Production Health Check
+    runs-on: self-hosted
+    needs: monitor
+    if: needs.monitor.outputs.stable == 'true'
+    steps:
+      - name: Final health check
+        run: |
+          sleep 10
+          curl -f http://192.168.7.50/api/health || exit 1
+          echo "✅ OK - Production is healthy"
+          echo "✅ OK - Deployment complete"
+  # ============================================================
+  # JOB 10 - Rollback
   # Runs only if monitor detects instability (stable=false)
   # Switches nginx back to the previous environment
   # Verifies rollback success with a health check
@@ -435,22 +450,7 @@ jobs:
           echo "❌ :latest was NOT updated"
           exit 1
 
-  # ============================================================
-  # JOB 10 - Production Health Check
-  # Runs only if monitor detects stability (stable=true)
-  # ============================================================
-  production-health-check:
-    name: Production Health Check
-    runs-on: self-hosted
-    needs: monitor
-    if: needs.monitor.outputs.stable == 'true'
-    steps:
-      - name: Final health check
-        run: |
-          sleep 10
-          curl -f http://192.168.7.50/api/health || exit 1
-          echo "✅ OK - Production is healthy"
-          echo "✅ OK - Deployment complete"
+ 
 
   # ============================================================
   # JOB 7 - Update AWS Disaster Recovery (if active) - suspended

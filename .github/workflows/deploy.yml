@@ -149,9 +149,63 @@ jobs:
           echo "idle_env=${IDLE}" >> $GITHUB_OUTPUT
           echo "✅ OK - Active environment: ${ACTIVE}"
           echo "✅ OK - Idle environment (deploy target): ${IDLE}"
-
   # ============================================================
-  # JOB 4 - Deploy to Idle Environment
+  # JOB 4 - Backup Database to S3
+  # pg_dump before touching production
+  # Backup is linked to the image tag for traceability
+  # Stored in S3 — survives a full Proxmox failure
+  # ============================================================
+  backup-database:
+    name: Backup Database to S3
+    runs-on: self-hosted
+    needs: [promote-image, detect-environment]
+    steps:
+      - name: Setup SSH key
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.PROXMOX_SSH_KEY }}" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          echo "StrictHostKeyChecking no" >> ~/.ssh/config
+          echo "✅ OK - SSH configured"
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id:     ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region:            eu-west-2
+
+      - name: pg_dump and upload to S3
+        run: |
+          TIMESTAMP=$(date +%Y%m%d_%H%M%S)
+          TAG="${{ needs.promote-image.outputs.image_tag }}"
+          BACKUP_FILE="backup_${TIMESTAMP}_${TAG}.sql"
+
+          echo "Creating database backup..."
+          echo "Tag: ${TAG}"
+          echo "File: ${BACKUP_FILE}"
+
+          # Dump pe DB VM
+          ssh devop@192.168.7.60 \
+            "docker exec postgres pg_dump -U devop_db appdb > /tmp/${BACKUP_FILE}"
+          echo "✅ OK - pg_dump complete"
+
+          # Copiaza pe runner
+          scp devop@192.168.7.60:/tmp/${BACKUP_FILE} /tmp/${BACKUP_FILE}
+          echo "✅ OK - Backup copied to runner"
+
+          # Upload la S3
+          aws s3 cp /tmp/${BACKUP_FILE} \
+            s3://silverbank-tfstate-mariusiordan/db-backups/${BACKUP_FILE}
+          echo "✅ OK - Backup uploaded to S3"
+          echo "Location: s3://silverbank-tfstate-mariusiordan/db-backups/${BACKUP_FILE}"
+
+          # Cleanup
+          ssh devop@192.168.7.60 "rm /tmp/${BACKUP_FILE}"
+          rm /tmp/${BACKUP_FILE}
+          echo "✅ OK - Cleanup complete"
+  # ============================================================
+  # JOB 5 - Deploy to Idle Environment
   # Deploys the promoted production image to the idle environment
   # Traffic is still flowing to the active environment at this point
   # No user impact during this step
@@ -159,7 +213,7 @@ jobs:
   deploy-to-idle:
     name: Deploy to Idle Environment
     runs-on: self-hosted
-    needs: [promote-image, detect-environment]
+    needs: [promote-image, detect-environment, backup-database
     steps:
       - name: Checkout infrastructure repo
         uses: actions/checkout@v4
@@ -201,7 +255,7 @@ jobs:
           echo "✅ OK - Deployment to ${{ needs.detect-environment.outputs.idle_env }} complete"
 
   # ============================================================
-  # JOB 5 - Smoke Tests
+  # JOB 6 - Smoke Tests
   # Runs health checks directly on the idle environment
   # Bypasses nginx - traffic still flows to active environment
   # If smoke tests fail - deployment stops, no traffic switch occurs
@@ -245,14 +299,11 @@ jobs:
           echo "✅ OK - Smoke tests passed on ${{ needs.detect-environment.outputs.idle_env }}"
 
   # ============================================================
-  # JOB 6 - Switch Traffic + Monitor + Rollback
-  # Switches nginx traffic to the new environment
-  # Monitors for 10 minutes - checks health every 30 seconds
-  # If 3 consecutive failures - auto rollback to previous environment
-  # If stable for 10 minutes - promotes image to ':latest' for AWS DR
+  # JOB 7 - Switch Traffic
+  # Change nginx config to point to the newly deployed environment
   # ============================================================
-  switch-monitor-rollback:
-    name: Switch Traffic + Monitor + Rollback
+  switch-traffic:
+    name: Switch Traffic
     runs-on: self-hosted
     needs: [promote-image, detect-environment, smoke-tests]
     steps:
@@ -281,38 +332,121 @@ jobs:
 
       - name: Switch nginx traffic
         run: |
-          echo "Switching nginx traffic to: ${{ needs.detect-environment.outputs.idle_env }}"
-          echo "Previous active environment: ${{ needs.detect-environment.outputs.active_env }}"
+          echo "Switching traffic to: ${{ needs.detect-environment.outputs.idle_env }}"
           cd proxmox-silverbank/ansible
           ansible-playbook playbooks/switch-traffic.yml \
             -e "idle_env=${{ needs.detect-environment.outputs.idle_env }}" \
             -i inventory.ini
           echo "✅ OK - Traffic switched to ${{ needs.detect-environment.outputs.idle_env }}"
 
-      - name: Monitor and auto-rollback if needed
+  # ============================================================
+  # JOB 8 - Monitor
+  # Monitor 10 minute after switch
+  # Output: stable=true/false for conditional rollback
+  # ============================================================
+  monitor:
+    name: Monitor (10 min)
+    runs-on: self-hosted
+    needs: [promote-image, detect-environment, switch-traffic]
+    outputs:
+      stable: ${{ steps.run-monitor.outputs.stable }}
+    steps:
+      - name: Checkout infrastructure repo
+        uses: actions/checkout@v4
+        with:
+          repository: mariusiordan/DevOps-final-project
+          token: ${{ secrets.GHCR_TOKEN }}
+
+      - name: Install Ansible
         run: |
-          echo "Monitoring production for 10 minutes..."
-          echo "Health check every 30 seconds"
-          echo "Auto-rollback after 3 consecutive failures"
+          pip install ansible --break-system-packages
+          echo "$HOME/.local/bin" >> $GITHUB_PATH
+
+      - name: Setup SSH key
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.PROXMOX_SSH_KEY }}" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          echo "StrictHostKeyChecking no" >> ~/.ssh/config
+
+      - name: Setup Ansible vault password
+        run: |
+          echo "${{ secrets.VAULT_PASSWORD }}" > ~/.vault-password
+          chmod 600 ~/.vault-password
+
+      - name: Run monitoring
+        id: run-monitor
+        run: |
           cd proxmox-silverbank/ansible
-          ansible-playbook playbooks/rollback.yml \
+          if ansible-playbook playbooks/rollback.yml \
             -e "app_tag=${{ needs.promote-image.outputs.image_tag }}" \
             -e "new_env=${{ needs.detect-environment.outputs.idle_env }}" \
             -e "previous_env=${{ needs.detect-environment.outputs.active_env }}" \
-            -i inventory.ini
-          echo "✅ OK - Monitoring complete - deployment stable"
-          echo "✅ OK - Image promoted to ':latest'"
+            -i inventory.ini; then
+            echo "stable=true" >> $GITHUB_OUTPUT
+            echo "✅ OK - Deployment stable"
+          else
+            echo "stable=false" >> $GITHUB_OUTPUT
+            echo "❌ Monitoring failed - rollback needed"
+          fi
 
-      - name: Production health check
+  # ============================================================
+  # JOB 9 - Rollback
+  # Runs only if monitor detects instability (stable=false)
+  # Switches nginx back to the previous environment
+  # Verifies rollback success with a health check
+  # ============================================================
+  rollback:
+    name: Rollback to Previous Environment
+    runs-on: self-hosted
+    needs: [detect-environment, monitor]
+    if: needs.monitor.outputs.stable == 'false'
+    steps:
+      - name: Setup SSH key
         run: |
-          echo "Running final production health check via nginx..."
-          sleep 15
+          mkdir -p ~/.ssh
+          echo "${{ secrets.PROXMOX_SSH_KEY }}" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          echo "StrictHostKeyChecking no" >> ~/.ssh/config
+
+      - name: Rollback nginx to previous environment
+        run: |
+          echo "Rolling back to: ${{ needs.detect-environment.outputs.active_env }}"
+          ssh devop@192.168.7.50 \
+            "sudo /opt/switch-backend.sh ${{ needs.detect-environment.outputs.active_env }}"
+          echo "✅ OK - Rolled back to ${{ needs.detect-environment.outputs.active_env }}"
+
+      - name: Verify rollback
+        run: |
+          sleep 10
+          curl -f http://192.168.7.50/api/health || exit 1
+          echo "✅ OK - Previous environment healthy after rollback"
+
+      - name: Fail pipeline
+        run: |
+          echo "❌ Deployment failed — rolled back to ${{ needs.detect-environment.outputs.active_env }}"
+          echo "❌ :latest was NOT updated"
+          exit 1
+
+  # ============================================================
+  # JOB 10 - Production Health Check
+  # Runs only if monitor detects stability (stable=true)
+  # ============================================================
+  production-health-check:
+    name: Production Health Check
+    runs-on: self-hosted
+    needs: monitor
+    if: needs.monitor.outputs.stable == 'true'
+    steps:
+      - name: Final health check
+        run: |
+          sleep 10
           curl -f http://192.168.7.50/api/health || exit 1
           echo "✅ OK - Production is healthy"
           echo "✅ OK - Deployment complete"
 
   # ============================================================
-  # JOB 7 - Update AWS Disaster Recovery (if active)
+  # JOB 7 - Update AWS Disaster Recovery (if active) - suspended
   # Checks if the AWS DR environment is running
   # If active - pulls ':latest' image and redeploys
   # If not active - skips silently

@@ -213,7 +213,7 @@ jobs:
   deploy-to-idle:
     name: Deploy to Idle Environment
     runs-on: self-hosted
-    needs: [promote-image, detect-environment, backup-database
+    needs: [promote-image, detect-environment, backup-database]
     steps:
       - name: Checkout infrastructure repo
         uses: actions/checkout@v4

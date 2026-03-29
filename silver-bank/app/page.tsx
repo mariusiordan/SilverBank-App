@@ -578,4 +578,3 @@ useEffect(() => {
     </>
   );
 }
-echo "Hello, world!";
